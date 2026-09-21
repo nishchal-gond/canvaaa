@@ -11,9 +11,12 @@ import {
   ExternalLink,
   RefreshCw,
   Video,
-  FileText
+  FileText,
+  Radio,
+  Settings
 } from 'lucide-react';
 import './AdminPanel.css';
+import { apiUrl, assetUrl, getApiBaseUrl, setApiBaseUrl } from '../config/api';
 
 export default function AdminPanel() {
   const [displayState, setDisplayState] = useState(null);
@@ -23,26 +26,34 @@ export default function AdminPanel() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [backendStatus, setBackendStatus] = useState('checking');
+  const [backendUrl, setBackendUrlState] = useState(getApiBaseUrl());
+  const [showBackendConfig, setShowBackendConfig] = useState(false);
+  const [customUrlInput, setCustomUrlInput] = useState(getApiBaseUrl());
 
   const fileInputRef = useRef(null);
 
   // Fetch display state
   const loadDisplayState = async () => {
     try {
-      const res = await fetch('/api/display/current');
+      const res = await fetch(apiUrl('/api/display/current'));
       if (res.ok) {
         const data = await res.json();
         setDisplayState(data);
+        setBackendStatus('connected');
+      } else {
+        setBackendStatus('error');
       }
     } catch (err) {
       console.error('Failed to load display state:', err);
+      setBackendStatus('error');
     }
   };
 
   // Fetch all presentations
   const loadPresentations = async () => {
     try {
-      const res = await fetch('/api/presentations');
+      const res = await fetch(apiUrl('/api/presentations'));
       if (res.ok) {
         const data = await res.json();
         setPresentations(data.presentations || []);
@@ -61,7 +72,7 @@ export default function AdminPanel() {
   // Fetch specific presentation details
   const loadPresentationDetails = async (id) => {
     try {
-      const res = await fetch(`/api/presentations/${id}`);
+      const res = await fetch(apiUrl(`/api/presentations/${id}`));
       if (res.ok) {
         const data = await res.json();
         setSelectedPresentation(data.presentation);
@@ -135,7 +146,7 @@ export default function AdminPanel() {
     formData.append('title', file.name.replace(/\.[^/.]+$/, ''));
 
     try {
-      const res = await fetch('/api/presentations/upload', {
+      const res = await fetch(apiUrl('/api/presentations/upload'), {
         method: 'POST',
         body: formData
       });
@@ -170,7 +181,7 @@ export default function AdminPanel() {
   const handlePublish = async (presentationId) => {
     setIsProcessing(true);
     try {
-      const res = await fetch('/api/display/publish', {
+      const res = await fetch(apiUrl('/api/display/publish'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ presentation_id: presentationId })
@@ -195,7 +206,7 @@ export default function AdminPanel() {
   const handlePause = async () => {
     setIsProcessing(true);
     try {
-      const res = await fetch('/api/display/pause', { method: 'POST' });
+      const res = await fetch(apiUrl('/api/display/pause'), { method: 'POST' });
       if (!res.ok) throw new Error('Pause failed');
       await loadDisplayState();
     } catch (err) {
@@ -209,7 +220,7 @@ export default function AdminPanel() {
   const handleContinue = async () => {
     setIsProcessing(true);
     try {
-      const res = await fetch('/api/display/continue', { method: 'POST' });
+      const res = await fetch(apiUrl('/api/display/continue'), { method: 'POST' });
       if (!res.ok) throw new Error('Continue failed');
       await loadDisplayState();
     } catch (err) {
@@ -217,6 +228,17 @@ export default function AdminPanel() {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleSaveBackendUrl = () => {
+    setApiBaseUrl(customUrlInput);
+    setBackendUrlState(customUrlInput);
+    setShowBackendConfig(false);
+    setBackendStatus('checking');
+    setTimeout(() => {
+      loadDisplayState();
+      loadPresentations();
+    }, 200);
   };
 
   const isPaused = Boolean(displayState?.state?.is_paused);
@@ -235,6 +257,23 @@ export default function AdminPanel() {
           <p className="brand-sub">Commercial Display Operations • LG 98TR3DK-BM</p>
         </div>
         <div className="header-actions">
+          {/* Backend Connection Status Badge & Settings */}
+          <button
+            className={`backend-status-pill ${backendStatus}`}
+            onClick={() => setShowBackendConfig(!showBackendConfig)}
+            title="Click to configure backend API URL"
+          >
+            <Radio size={14} className={backendStatus === 'connected' ? 'pulse' : ''} />
+            <span>
+              {backendStatus === 'connected'
+                ? 'Backend: Live'
+                : backendStatus === 'error'
+                ? 'Backend: Offline'
+                : 'Connecting...'}
+            </span>
+            <Settings size={14} style={{ opacity: 0.7 }} />
+          </button>
+
           <a href="/display" target="_blank" rel="noreferrer" className="display-link-btn">
             <Tv size={18} />
             <span>Open LG Display Player</span>
@@ -242,6 +281,33 @@ export default function AdminPanel() {
           </a>
         </div>
       </header>
+
+      {/* Backend URL Configuration Modal / Dropdown */}
+      {showBackendConfig && (
+        <div className="backend-config-box">
+          <div className="backend-config-header">
+            <strong>Backend Connection Settings</strong>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              Connected to Cloudflare Tunnel or local server
+            </span>
+          </div>
+          <div className="backend-config-row">
+            <input
+              type="text"
+              value={customUrlInput}
+              onChange={(e) => setCustomUrlInput(e.target.value)}
+              placeholder="e.g. https://xxx.trycloudflare.com or leave empty for local proxy"
+              className="backend-config-input"
+            />
+            <button className="btn-primary" onClick={handleSaveBackendUrl}>
+              Save & Reconnect
+            </button>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+            Current Target: <code>{backendUrl || '(local proxy / relative)'}</code>
+          </div>
+        </div>
+      )}
 
       {/* Operator Control & System Status Bar */}
       <div className="operator-bar">
@@ -398,7 +464,7 @@ export default function AdminPanel() {
             {selectedPresentation.media_type === 'video' ? (
               <div className="video-preview-wrapper">
                 <video
-                  src={selectedPresentation.media_url}
+                  src={assetUrl(selectedPresentation.media_url)}
                   className="admin-video-player"
                   controls
                   autoPlay
@@ -413,7 +479,7 @@ export default function AdminPanel() {
                   <div key={slide.id} className="slide-thumbnail-box">
                     <span className="slide-number-badge">Slide {slide.slide_index}</span>
                     <img
-                      src={slide.image_path}
+                      src={assetUrl(slide.image_path)}
                       alt={`Slide ${slide.slide_index}`}
                       className="slide-thumbnail-img"
                       loading="lazy"

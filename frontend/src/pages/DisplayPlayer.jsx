@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './DisplayPlayer.css';
+import { apiUrl, assetUrl } from '../config/api';
 
 export default function DisplayPlayer() {
   const [displayState, setDisplayState] = useState(() => {
@@ -40,7 +41,7 @@ export default function DisplayPlayer() {
   const preloadImages = (slideList) => {
     slideList.forEach((slide) => {
       const img = new Image();
-      img.src = slide.image_path;
+      img.src = assetUrl(slide.image_path);
     });
   };
 
@@ -92,7 +93,7 @@ export default function DisplayPlayer() {
 
   // Initial fetch on mount
   useEffect(() => {
-    fetch('/api/display/current')
+    fetch(apiUrl('/api/display/current'))
       .then((res) => {
         if (!res.ok) throw new Error('Network error');
         return res.json();
@@ -112,7 +113,7 @@ export default function DisplayPlayer() {
     let reconnectTimeout = null;
 
     const connectSSE = () => {
-      eventSource = new EventSource('/api/display/stream');
+      eventSource = new EventSource(apiUrl('/api/display/stream'));
 
       eventSource.addEventListener('INIT_STATE', (e) => {
         try {
@@ -240,7 +241,7 @@ export default function DisplayPlayer() {
           <video
             ref={videoRef}
             key={displayState.media_url}
-            src={displayState.media_url}
+            src={assetUrl(displayState.media_url)}
             className="video-layer"
             autoPlay
             muted
@@ -252,7 +253,7 @@ export default function DisplayPlayer() {
             {slides.map((slide, idx) => (
               <img
                 key={slide.id || idx}
-                src={slide.image_path}
+                src={assetUrl(slide.image_path)}
                 alt={`Slide ${slide.slide_index}`}
                 className={`slide-layer ${idx === currentSlideIndex ? 'active' : ''}`}
               />

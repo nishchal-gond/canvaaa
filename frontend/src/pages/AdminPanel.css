@@ -57,6 +57,75 @@
   background: rgba(197, 168, 128, 0.25);
 }
 
+.backend-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  background: #1e1d1b;
+}
+
+.backend-status-pill.connected {
+  background: rgba(46, 204, 113, 0.12);
+  color: #2ecc71;
+  border-color: rgba(46, 204, 113, 0.3);
+}
+
+.backend-status-pill.error {
+  background: rgba(231, 76, 60, 0.12);
+  color: #e74c3c;
+  border-color: rgba(231, 76, 60, 0.3);
+}
+
+.backend-status-pill.checking {
+  background: rgba(241, 196, 15, 0.12);
+  color: #f1c40f;
+  border-color: rgba(241, 196, 15, 0.3);
+}
+
+.backend-config-box {
+  background: #1c1b18;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  animation: fadeIn 0.2s ease;
+}
+
+.backend-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.backend-config-row {
+  display: flex;
+  gap: 12px;
+}
+
+.backend-config-input {
+  flex: 1;
+  background: #121110;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.backend-config-input:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+}
+
 /* Operator Control Card */
 .operator-bar {
   display: grid;

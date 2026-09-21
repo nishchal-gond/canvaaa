@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://licence-locked-lifestyle-roll.trycloudflare.com/api/:path*"
+    },
+    {
+      "source": "/uploads/:path*",
+      "destination": "https://licence-locked-lifestyle-roll.trycloudflare.com/uploads/:path*"
+    }
+  ]
+}
