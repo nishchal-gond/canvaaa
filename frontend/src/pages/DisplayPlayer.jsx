@@ -107,6 +107,21 @@ export default function DisplayPlayer() {
       });
   }, []);
 
+  // Continuous background synchronization (every 2.5s)
+  // Guarantees display automatically changes content immediately whenever admin publishes
+  useEffect(() => {
+    const syncInterval = setInterval(() => {
+      fetch(apiUrl('/api/display/current'))
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data) handleDisplayPayload(data);
+        })
+        .catch(() => {});
+    }, 2500);
+
+    return () => clearInterval(syncInterval);
+  }, []);
+
   // Server-Sent Events (SSE) listener
   useEffect(() => {
     let eventSource = null;
@@ -177,34 +192,29 @@ export default function DisplayPlayer() {
   // Slide auto-rotation timer (for presentation mode)
   useEffect(() => {
     if (displayState?.media_type === 'video' || isPaused || slides.length <= 1) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+      setProgress(0);
       return;
     }
 
-    const intervalMs = rotationInterval * 1000;
+    const intervalMs = (rotationInterval || 10) * 1000;
     const tickMs = 100;
-    let elapsedMs = 0;
+    let elapsed = 0;
 
-    progressTimerRef.current = setInterval(() => {
-      elapsedMs += tickMs;
-      const pct = Math.min((elapsedMs / intervalMs) * 100, 100);
-      setProgress(pct);
+    const timer = setInterval(() => {
+      elapsed += tickMs;
+      if (elapsed >= intervalMs) {
+        elapsed = 0;
+        setCurrentSlideIndex((prev) => (prev + 1) % slides.length);
+        setProgress(0);
+      } else {
+        setProgress(Math.min((elapsed / intervalMs) * 100, 100));
+      }
     }, tickMs);
 
-    timerRef.current = setInterval(() => {
-      setCurrentSlideIndex((prev) => (prev + 1) % slides.length);
-      elapsedMs = 0;
-      setProgress(0);
-    }, intervalMs);
+    return () => clearInterval(timer);
+  }, [slides.length, rotationInterval, isPaused, displayState?.media_type, currentSlideIndex]);
 
-    return () => {
-      clearInterval(timerRef.current);
-      clearInterval(progressTimerRef.current);
-    };
-  }, [slides.length, rotationInterval, isPaused, displayState?.media_type]);
-
-  // Fullscreen toggle on keypress (F) or double click
+  // Fullscreen toggle (F) and Manual Slide navigation (Arrow keys / Space)
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
@@ -217,11 +227,21 @@ export default function DisplayPlayer() {
     const handleKeyDown = (e) => {
       if (e.key === 'f' || e.key === 'F') {
         toggleFullscreen();
+      } else if (e.key === 'ArrowRight') {
+        if (slides.length > 0) {
+          setCurrentSlideIndex((prev) => (prev + 1) % slides.length);
+          setProgress(0);
+        }
+      } else if (e.key === 'ArrowLeft') {
+        if (slides.length > 0) {
+          setCurrentSlideIndex((prev) => (prev - 1 + slides.length) % slides.length);
+          setProgress(0);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [slides.length]);
 
   const isVideo = displayState?.media_type === 'video';
   const hasContent = isVideo ? Boolean(displayState?.media_url) : slides.length > 0;

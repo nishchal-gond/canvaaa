@@ -87,38 +87,49 @@ export default function AdminPanel() {
     loadDisplayState();
     loadPresentations();
 
-    const eventSource = new EventSource('/api/display/stream');
+    // Auto-sync polling every 3 seconds to guarantee operator panel is always live
+    const syncInterval = setInterval(() => {
+      loadDisplayState();
+    }, 3000);
 
-    eventSource.addEventListener('INIT_STATE', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setDisplayState(data);
-      } catch (err) {
-        console.error(err);
-      }
-    });
+    let eventSource = null;
+    try {
+      eventSource = new EventSource(apiUrl('/api/display/stream'));
 
-    eventSource.addEventListener('PRESENTATION_PUBLISHED', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setDisplayState(data);
-        loadPresentations();
-      } catch (err) {
-        console.error(err);
-      }
-    });
+      eventSource.addEventListener('INIT_STATE', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setDisplayState(data);
+        } catch (err) {
+          console.error(err);
+        }
+      });
 
-    eventSource.addEventListener('DISPLAY_STATE_CHANGED', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setDisplayState(data);
-      } catch (err) {
-        console.error(err);
-      }
-    });
+      eventSource.addEventListener('PRESENTATION_PUBLISHED', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setDisplayState(data);
+          loadPresentations();
+        } catch (err) {
+          console.error(err);
+        }
+      });
+
+      eventSource.addEventListener('DISPLAY_STATE_CHANGED', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setDisplayState(data);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+    } catch (err) {
+      console.warn('SSE connection error:', err);
+    }
 
     return () => {
-      eventSource.close();
+      clearInterval(syncInterval);
+      if (eventSource) eventSource.close();
     };
   }, []);
 
@@ -241,7 +252,23 @@ export default function AdminPanel() {
     }, 200);
   };
 
+  const handleSetInterval = async (seconds) => {
+    try {
+      const res = await fetch(apiUrl('/api/display/interval'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rotation_interval: seconds })
+      });
+      if (res.ok) {
+        await loadDisplayState();
+      }
+    } catch (err) {
+      console.error('Failed to update interval:', err);
+    }
+  };
+
   const isPaused = Boolean(displayState?.state?.is_paused);
+  const currentInterval = displayState?.state?.rotation_interval || 10;
   const activeTitle = displayState?.state?.active_title || 'None';
   const activeFormat = displayState?.state?.original_format || 'PDF';
   const activeMediaType = displayState?.state?.media_type || 'presentation';
@@ -345,6 +372,39 @@ export default function AdminPanel() {
               <Play size={18} />
               <span>CONTINUE ROTATION</span>
             </button>
+          </div>
+
+          {/* Slide Rotation Interval / Scenario Speed Selector */}
+          <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Slide Rotation Speed:
+              </span>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent-gold)' }}>
+                {currentInterval} seconds / slide
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {[5, 8, 10, 15, 20, 30].map((sec) => (
+                <button
+                  key={sec}
+                  onClick={() => handleSetInterval(sec)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: currentInterval === sec ? '700' : '400',
+                    background: currentInterval === sec ? 'var(--accent-gold)' : '#1e1d1b',
+                    color: currentInterval === sec ? '#000' : '#d1cfca',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {sec}s
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

@@ -172,6 +172,41 @@ router.post('/continue', async (req, res) => {
 });
 
 /**
+ * POST /api/display/interval
+ * Sets slide rotation interval (in seconds)
+ */
+router.post('/interval', async (req, res) => {
+  const { rotation_interval } = req.body;
+  const interval = parseInt(rotation_interval, 10);
+  if (isNaN(interval) || interval < 1 || interval > 300) {
+    return res.status(400).json({ error: 'rotation_interval must be between 1 and 300 seconds.' });
+  }
+
+  try {
+    await query(
+      `UPDATE display_state
+       SET rotation_interval = $1,
+           updated_at = NOW()
+       WHERE id = 1`,
+      [interval]
+    );
+
+    const payload = await getCurrentDisplayPayload();
+    sseBroadcaster.broadcast('DISPLAY_STATE_CHANGED', payload);
+
+    res.json({
+      success: true,
+      message: `Rotation interval updated to ${interval} seconds.`,
+      rotation_interval: interval,
+      payload
+    });
+  } catch (err) {
+    console.error('Error setting rotation interval:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/display/stream
  * Server-Sent Events (SSE) stream for real-time live display synchronization
  */
