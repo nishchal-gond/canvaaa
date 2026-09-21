@@ -7,6 +7,10 @@
     {
       "source": "/uploads/:path*",
       "destination": "https://licence-locked-lifestyle-roll.trycloudflare.com/uploads/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
