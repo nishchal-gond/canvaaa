@@ -1,0 +1,29 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+
+# Uploaded presentation files and rendered slide assets
+backend/uploads/
+uploads/
+extracted_assets/
+
+# Python virtual environment and cache
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Operating system
+.DS_Store
+Thumbs.db

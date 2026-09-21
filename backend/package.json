@@ -1,0 +1,19 @@
+{
+  "name": "sales-display-backend",
+  "version": "1.0.0",
+  "description": "Automated Sales Display Backend for LG 98 Commercial Display",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node src/db/migrate.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.13.3"
+  }
+}

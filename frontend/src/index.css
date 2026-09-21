@@ -1,0 +1,43 @@
+:root {
+  --bg-dark: #121110;
+  --bg-card: #1c1a18;
+  --bg-card-hover: #262320;
+  --border-subtle: #2d2925;
+  --text-primary: #f5f3ef;
+  --text-secondary: #9f988f;
+  --text-muted: #6b645b;
+  --accent-gold: #c5a880;
+  --accent-gold-light: #dfc8a8;
+  --accent-green: #38bdf8;
+  --status-live: #22c55e;
+  --status-paused: #eab308;
+  --status-offline: #ef4444;
+  --font-serif: 'Cinzel', Georgia, serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Hide scrollbars for signage screens */
+::-webkit-scrollbar {
+  display: none;
+}
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

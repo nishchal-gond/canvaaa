@@ -1,0 +1,72 @@
+import { pool, query } from '../config/db.js';
+
+export async function runMigrations() {
+  console.log('Running database migrations for sales_display multi-format support...');
+
+  const schema = `
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+    CREATE TABLE IF NOT EXISTS presentations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title VARCHAR(255) NOT NULL,
+      filename VARCHAR(255) NOT NULL,
+      page_count INT NOT NULL DEFAULT 0,
+      is_active BOOLEAN DEFAULT false,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    -- Add multi-format columns if they don't already exist
+    ALTER TABLE presentations ADD COLUMN IF NOT EXISTS original_format VARCHAR(20) DEFAULT 'PDF';
+    ALTER TABLE presentations ADD COLUMN IF NOT EXISTS media_type VARCHAR(20) DEFAULT 'presentation';
+    ALTER TABLE presentations ADD COLUMN IF NOT EXISTS duration NUMERIC(10,2) DEFAULT 0;
+    ALTER TABLE presentations ADD COLUMN IF NOT EXISTS width INT DEFAULT 1920;
+    ALTER TABLE presentations ADD COLUMN IF NOT EXISTS height INT DEFAULT 1080;
+    ALTER TABLE presentations ADD COLUMN IF NOT EXISTS media_url VARCHAR(500);
+    ALTER TABLE presentations ADD COLUMN IF NOT EXISTS thumbnail_url VARCHAR(500);
+
+    CREATE TABLE IF NOT EXISTS slides (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      presentation_id UUID REFERENCES presentations(id) ON DELETE CASCADE,
+      slide_index INT NOT NULL,
+      image_path VARCHAR(500) NOT NULL,
+      width INT DEFAULT 1920,
+      height INT DEFAULT 1080,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    ALTER TABLE slides ADD COLUMN IF NOT EXISTS width INT DEFAULT 1920;
+    ALTER TABLE slides ADD COLUMN IF NOT EXISTS height INT DEFAULT 1080;
+
+    CREATE TABLE IF NOT EXISTS display_state (
+      id INT PRIMARY KEY DEFAULT 1,
+      active_presentation_id UUID REFERENCES presentations(id) ON DELETE SET NULL,
+      is_paused BOOLEAN DEFAULT false,
+      rotation_interval INT DEFAULT 10,
+      last_published_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      CONSTRAINT single_row_check CHECK (id = 1)
+    );
+
+    -- Ensure single display_state row exists
+    INSERT INTO display_state (id, is_paused, rotation_interval, updated_at)
+    VALUES (1, false, 10, NOW())
+    ON CONFLICT (id) DO NOTHING;
+  `;
+
+  try {
+    await query(schema);
+    console.log('✅ Multi-format migrations completed successfully.');
+  } catch (err) {
+    console.error('❌ Migration failed:', err);
+    throw err;
+  }
+}
+
+if (process.argv[1].endsWith('migrate.js')) {
+  runMigrations()
+    .then(() => pool.end())
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}

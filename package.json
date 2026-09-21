@@ -1,0 +1,12 @@
+{
+  "name": "sales-display-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Automated Sales Display Management System for LG 98 Commercial Display",
+  "scripts": {
+    "migrate": "cd backend && npm run migrate",
+    "backend": "cd backend && npm run dev",
+    "frontend": "cd frontend && npm run dev",
+    "test:backend": "cd backend && node tests/test_api.js"
+  }
+}
