@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './DisplayPlayer.css';
 import { apiUrl, assetUrl } from '../config/api';
+import { saveSlideBlob, getSlideBlob, saveSignageMeta, getSignageMeta } from '../utils/offlineCache';
 
 export default function DisplayPlayer() {
   const [displayState, setDisplayState] = useState(() => {
@@ -37,16 +38,34 @@ export default function DisplayPlayer() {
 
   const videoRef = useRef(null);
 
-  // Preload images into memory for zero-latency slide transitions
-  const preloadImages = (slideList) => {
-    slideList.forEach((slide) => {
-      const img = new Image();
-      img.src = assetUrl(slide.image_path);
-    });
+  // Hydrate slide list with offline IndexedDB Blobs
+  const hydrateSlidesWithBlobs = async (slideList) => {
+    if (!Array.isArray(slideList) || slideList.length === 0) return slideList;
+    return Promise.all(
+      slideList.map(async (slide) => {
+        const key = `slide_${slide.id}`;
+        let blob = await getSlideBlob(key);
+        if (!blob) {
+          try {
+            const res = await fetch(assetUrl(slide.image_path));
+            if (res.ok) {
+              blob = await res.blob();
+              await saveSlideBlob(key, blob);
+            }
+          } catch {
+            // offline or tunnel down, will use existing or fallback
+          }
+        }
+        return {
+          ...slide,
+          blobUrl: blob ? URL.createObjectURL(blob) : null
+        };
+      })
+    );
   };
 
-  // Process incoming display payload from API or SSE
-  const handleDisplayPayload = (payload) => {
+  // Process incoming display payload from API, SSE, or offline cache
+  const handleDisplayPayload = async (payload) => {
     if (!payload) return;
 
     if (payload.state) {
@@ -57,6 +76,7 @@ export default function DisplayPlayer() {
       }
       try {
         localStorage.setItem('lph_cached_state', JSON.stringify(payload.state));
+        await saveSignageMeta('cached_state', payload.state);
       } catch (e) {
         console.error(e);
       }
@@ -64,7 +84,6 @@ export default function DisplayPlayer() {
 
     if (payload.state?.media_type === 'video') {
       setSlides([]);
-      // When media is video, pause or play according to pause state
       if (videoRef.current) {
         if (payload.state.is_paused) {
           videoRef.current.pause();
@@ -75,15 +94,16 @@ export default function DisplayPlayer() {
     } else if (payload.slides && Array.isArray(payload.slides) && payload.slides.length > 0) {
       const newIds = payload.slides.map((s) => s.id).join(',');
       const oldIds = slidesRef.current.map((s) => s.id).join(',');
-      if (newIds !== oldIds) {
-        setSlides(payload.slides);
-        preloadImages(payload.slides);
+      if (newIds !== oldIds || slidesRef.current.some((s) => !s.blobUrl)) {
+        const hydrated = await hydrateSlidesWithBlobs(payload.slides);
+        setSlides(hydrated);
         setCurrentSlideIndex(0);
         setProgress(0);
         try {
           localStorage.setItem('lph_cached_slides', JSON.stringify(payload.slides));
+          await saveSignageMeta('cached_slides', payload.slides);
         } catch (e) {
-          console.error('LocalStorage write failed:', e);
+          console.error('Storage write failed:', e);
         }
       }
     }
@@ -91,8 +111,18 @@ export default function DisplayPlayer() {
     setConnectionStatus(payload.state?.is_paused ? 'paused' : 'live');
   };
 
-  // Initial fetch on mount
+  // Initial fetch on mount + offline IndexedDB hydration
   useEffect(() => {
+    // 1. Instantly hydrate from local IndexedDB storage
+    (async () => {
+      const cachedMetaSlides = await getSignageMeta('cached_slides');
+      if (cachedMetaSlides && cachedMetaSlides.length > 0 && slidesRef.current.length === 0) {
+        const hydrated = await hydrateSlidesWithBlobs(cachedMetaSlides);
+        setSlides(hydrated);
+      }
+    })();
+
+    // 2. Fetch live state from API
     fetch(apiUrl('/api/display/current'))
       .then((res) => {
         if (!res.ok) throw new Error('Network error');
@@ -104,11 +134,12 @@ export default function DisplayPlayer() {
       .catch((err) => {
         console.warn('Initial fetch failed, playing from offline cache:', err);
         setConnectionStatus('offline');
+        // If offline, ensure playback is UNPAUSED so cached slides loop forever
+        setIsPaused(false);
       });
   }, []);
 
   // Continuous background synchronization (every 2.5s)
-  // Guarantees display automatically changes content immediately whenever admin publishes
   useEffect(() => {
     const syncInterval = setInterval(() => {
       fetch(apiUrl('/api/display/current'))
@@ -116,7 +147,9 @@ export default function DisplayPlayer() {
         .then((data) => {
           if (data) handleDisplayPayload(data);
         })
-        .catch(() => {});
+        .catch(() => {
+          setConnectionStatus('offline');
+        });
     }, 2500);
 
     return () => clearInterval(syncInterval);
@@ -190,8 +223,10 @@ export default function DisplayPlayer() {
   }, [isPaused, displayState?.media_type]);
 
   // Slide auto-rotation timer (for presentation mode)
+  // Even if offline, continues rotating through cached slides endlessly
   useEffect(() => {
-    if (displayState?.media_type === 'video' || isPaused || slides.length <= 1) {
+    const shouldPause = isPaused && connectionStatus !== 'offline';
+    if (displayState?.media_type === 'video' || shouldPause || slides.length <= 1) {
       setProgress(0);
       return;
     }
@@ -212,7 +247,7 @@ export default function DisplayPlayer() {
     }, tickMs);
 
     return () => clearInterval(timer);
-  }, [slides.length, rotationInterval, isPaused, displayState?.media_type, currentSlideIndex]);
+  }, [slides.length, rotationInterval, isPaused, connectionStatus, displayState?.media_type, currentSlideIndex]);
 
   // Fullscreen toggle (F) and Manual Slide navigation (Arrow keys / Space)
   const toggleFullscreen = () => {
@@ -273,14 +308,20 @@ export default function DisplayPlayer() {
             {slides.map((slide, idx) => (
               <img
                 key={slide.id || idx}
-                src={assetUrl(slide.image_path)}
+                src={slide.blobUrl || assetUrl(slide.image_path)}
                 alt={`Slide ${slide.slide_index}`}
                 className={`slide-layer ${idx === currentSlideIndex ? 'active' : ''}`}
+                onError={(e) => {
+                  // If remote asset fails to load, try fallback
+                  if (slide.blobUrl && e.target.src !== slide.blobUrl) {
+                    e.target.src = slide.blobUrl;
+                  }
+                }}
               />
             ))}
 
             {/* Bottom Progress Bar */}
-            {!isPaused && slides.length > 1 && (
+            {slides.length > 1 && (
               <div className="slide-progress-bar" style={{ width: `${progress}%` }} />
             )}
           </>
@@ -290,14 +331,18 @@ export default function DisplayPlayer() {
         <div className="signage-badge">
           <div
             className={`status-dot ${
-              connectionStatus === 'paused' ? 'paused' : connectionStatus === 'offline' ? 'offline' : ''
+              connectionStatus === 'paused'
+                ? 'paused'
+                : connectionStatus === 'offline'
+                ? 'offline'
+                : ''
             }`}
           />
           <span>
             {connectionStatus === 'paused'
               ? 'PAUSED'
               : connectionStatus === 'offline'
-              ? 'OFFLINE (CACHED)'
+              ? 'OFFLINE (PLAYING CACHE)'
               : 'LIVE DISPLAY'}
           </span>
           <span className="badge-divider" />
