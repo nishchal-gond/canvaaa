@@ -1,12 +1,16 @@
 FROM node:20-bookworm-slim
 
-# Install system dependencies: Python3, pip, ffmpeg, poppler
+# Install system dependencies: Python3, pip, ffmpeg, poppler, and headless LibreOffice for PPTX
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
     ffmpeg \
     poppler-utils \
+    libreoffice-impress-nogui \
+    libreoffice-common \
+    fonts-dejavu \
+    fonts-liberation \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

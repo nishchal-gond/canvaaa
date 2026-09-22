@@ -155,6 +155,16 @@ export default function DisplayPlayer() {
           console.error('Storage write failed:', e);
         }
       }
+    } else if (!newState?.active_presentation_id || (Array.isArray(payload.slides) && payload.slides.length === 0)) {
+      // Clear slides so it gracefully displays the beautiful LPH branded screen
+      setSlides([]);
+      slidesHashRef.current = '';
+      try {
+        localStorage.removeItem('lph_cached_slides');
+        await saveSignageMeta('cached_slides', []);
+      } catch (e) {
+        console.error(e);
+      }
     }
 
     setConnectionStatus(newState?.is_paused ? 'paused' : 'live');
@@ -375,12 +385,14 @@ export default function DisplayPlayer() {
               <img
                 key={slide.id || idx}
                 src={slide.blobUrl || assetUrl(slide.image_path)}
-                alt={`Slide ${slide.slide_index}`}
+                alt=""
                 className={`slide-layer ${idx === currentSlideIndex ? 'active' : ''}`}
                 onError={(e) => {
-                  // If remote asset fails to load, try fallback
                   if (slide.blobUrl && e.target.src !== slide.blobUrl) {
                     e.target.src = slide.blobUrl;
+                  } else {
+                    // Suppress broken image icon completely
+                    e.target.style.display = 'none';
                   }
                 }}
               />
