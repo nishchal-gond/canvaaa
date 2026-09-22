@@ -14,7 +14,15 @@ export function getApiBaseUrl() {
 
     // 2. Check localStorage
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return saved.trim().replace(/\/$/, '');
+    if (saved) {
+      const trimmed = saved.trim().replace(/\/$/, '');
+      // If page is on HTTPS, ignore insecure HTTP URLs (prevents browser Mixed Content blocking)
+      if (window.location.protocol === 'https:' && trimmed.startsWith('http://')) {
+        localStorage.removeItem(STORAGE_KEY);
+      } else {
+        return trimmed;
+      }
+    }
   }
 
   // 3. Vite environment variable

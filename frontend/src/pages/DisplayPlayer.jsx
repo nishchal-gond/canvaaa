@@ -210,10 +210,13 @@ export default function DisplayPlayer() {
       })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
-          if (data) handleDisplayPayload(data);
+          if (data) {
+            handleDisplayPayload(data);
+            setConnectionStatus(data.state?.is_paused ? 'paused' : 'live');
+          }
         })
         .catch(() => {
-          // Keep running cached slides uninterrupted
+          // If polling fails, check if we have offline content
         });
     }, 2500);
 
@@ -262,9 +265,9 @@ export default function DisplayPlayer() {
       };
 
       eventSource.onerror = () => {
-        setConnectionStatus('offline');
+        // SSE reconnect: polling keeps state in sync seamlessly
         eventSource.close();
-        reconnectTimeout = setTimeout(connectSSE, 4000);
+        reconnectTimeout = setTimeout(connectSSE, 5000);
       };
     };
 
@@ -378,6 +381,19 @@ export default function DisplayPlayer() {
             muted
             loop
             playsInline
+            onLoadedMetadata={(e) => {
+              if (!isPausedRef.current) {
+                e.target.play().catch(() => {});
+              }
+            }}
+            onCanPlay={(e) => {
+              if (!isPausedRef.current) {
+                e.target.play().catch(() => {});
+              }
+            }}
+            onError={(e) => {
+              console.warn('Video element error:', e);
+            }}
           />
         ) : (
           <>

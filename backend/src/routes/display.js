@@ -216,10 +216,12 @@ router.post('/interval', async (req, res) => {
 router.get('/stream', async (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
+    'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
     'Access-Control-Allow-Origin': '*'
   });
+  if (res.flushHeaders) res.flushHeaders();
 
   // Register client
   sseBroadcaster.addClient(res);
@@ -228,6 +230,7 @@ router.get('/stream', async (req, res) => {
   try {
     const initialPayload = await getCurrentDisplayPayload();
     res.write(`event: INIT_STATE\ndata: ${JSON.stringify(initialPayload)}\n\n`);
+    if (res.flush) res.flush();
   } catch (err) {
     console.error('Error sending initial SSE payload:', err);
   }

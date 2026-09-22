@@ -1,58 +1,84 @@
 // Service Worker for LPH Sales Display
 // Provides 100% offline slide and video playback if Wi-Fi drops on the commercial display
 
-const CACHE_NAME = 'lph-sales-display-v2';
+const CACHE_NAME = 'lph-sales-display-v3';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys.map((k) => {
+          if (k !== CACHE_NAME) return caches.delete(k);
+        })
+      )
+    ).then(() => clients.claim())
+  );
 });
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Network-first for API state, but fallback to cached state if offline
+  // 1. NEVER intercept video streams or HTTP Range requests
+  // Native browser video streaming requires 206 Partial Content which cannot be cached by standard Service Worker Cache API
+  if (
+    event.request.headers.get('range') ||
+    event.request.destination === 'video' ||
+    url.pathname.includes('/uploads/videos/') ||
+    url.pathname.endsWith('.mp4') ||
+    url.pathname.endsWith('.mov') ||
+    url.pathname.endsWith('.webm')
+  ) {
+    return; // Pass through to native browser network handler
+  }
+
+  // 2. Network-first for API state with safe fallback
   if (url.pathname.startsWith('/api/display/current')) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          if (response.status === 200) {
+          if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
           return response;
         })
-        .catch(() => {
-          return caches.match(event.request);
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          return new Response(JSON.stringify({ error: 'offline' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          });
         })
     );
     return;
   }
 
-  // Cache-first for slide images, videos, and static assets
+  // 3. Cache-first for slide images and thumbnails
   if (
     url.pathname.startsWith('/uploads/slides/') ||
-    url.pathname.startsWith('/uploads/videos/') ||
     url.pathname.startsWith('/uploads/thumbnails/') ||
-    event.request.destination === 'image' ||
-    event.request.destination === 'video'
+    event.request.destination === 'image'
   ) {
     event.respondWith(
       caches.match(event.request).then((cachedResponse) => {
         if (cachedResponse) {
-          fetch(event.request).then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
-            }
-          }).catch(() => {});
+          fetch(event.request)
+            .then((networkResponse) => {
+              if (networkResponse && networkResponse.status === 200) {
+                caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
+              }
+            })
+            .catch(() => {});
           return cachedResponse;
         }
 
         return fetch(event.request).then((networkResponse) => {
-          if (networkResponse && (networkResponse.status === 200 || networkResponse.status === 206)) {
+          if (networkResponse && networkResponse.status === 200) {
             const clone = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
