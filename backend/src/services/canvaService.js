@@ -67,8 +67,8 @@ export async function exchangeCanvaAuthCode({ code, state, redirectUri }) {
     process.env.CANVA_CLIENT_SECRET ||
     'cnvcaHhkYCKMOpnh-fY_WMWvTz6Rcf9vlQWyuWwfTYTECRD84';
   const finalRedirectUri =
-    redirectUri ||
     session?.redirectUri ||
+    redirectUri ||
     process.env.CANVA_REDIRECT_URI ||
     'http://127.0.0.1:8000/api/canva/callback';
 

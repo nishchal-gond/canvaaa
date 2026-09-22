@@ -31,6 +31,9 @@ if (fs.existsSync(permSlidesDir)) {
   }
 }
 
+// Trust reverse proxy (Render / Cloudflare) for HTTPS protocol detection
+app.set('trust proxy', 1);
+
 // Enable CORS for frontend
 app.use(cors({
   origin: '*',

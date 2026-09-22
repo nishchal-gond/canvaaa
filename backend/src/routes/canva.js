@@ -22,7 +22,13 @@ const router = express.Router();
 router.get('/auth/start', (req, res) => {
   try {
     const { redirect_uri } = req.query;
-    const { auth_url, state, redirect_uri: finalUri } = generateCanvaAuthUrl(redirect_uri);
+    const isLive = req.get('host')?.includes('onrender.com') || process.env.NODE_ENV === 'production';
+    const defaultRedirect = isLive
+      ? 'https://canvaaa-p0f3.onrender.com/api/canva/callback'
+      : `${req.protocol}://${req.get('host')}/api/canva/callback`;
+
+    const targetRedirect = redirect_uri || process.env.CANVA_REDIRECT_URI || defaultRedirect;
+    const { auth_url, state, redirect_uri: finalUri } = generateCanvaAuthUrl(targetRedirect);
     res.json({
       success: true,
       auth_url,
@@ -41,7 +47,8 @@ router.get('/auth/start', (req, res) => {
  */
 router.get('/callback', async (req, res) => {
   const { code, state, error, error_description } = req.query;
-  const frontendOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const isLive = req.get('host')?.includes('onrender.com') || process.env.NODE_ENV === 'production';
+  const frontendOrigin = process.env.FRONTEND_URL || (isLive ? 'https://canvaaa-one.vercel.app' : 'http://localhost:5173');
 
   if (error) {
     console.error('[Canva OAuth Error]:', error, error_description);
@@ -53,10 +60,14 @@ router.get('/callback', async (req, res) => {
   }
 
   try {
+    const defaultRedirect = isLive
+      ? 'https://canvaaa-p0f3.onrender.com/api/canva/callback'
+      : `${req.protocol}://${req.get('host')}/api/canva/callback`;
+
     const updated = await exchangeCanvaAuthCode({
       code,
       state,
-      redirectUri: `${req.protocol}://${req.get('host')}/api/canva/callback`
+      redirectUri: defaultRedirect
     });
 
     console.log('[Canva OAuth] Successfully authorized and saved tokens for Canva!');
