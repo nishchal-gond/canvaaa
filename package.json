@@ -10,5 +10,9 @@
     "build:frontend": "cd frontend && npm run build",
     "tunnel": "\"C:\\Program Files (x86)\\cloudflared\\cloudflared.exe\" tunnel --url http://localhost:8000",
     "test:backend": "cd backend && node tests/test_api.js"
+  },
+  "dependencies": {
+    "@neon/config": "^1.7.2",
+    "@neon/env": "^1.4.3"
   }
 }
