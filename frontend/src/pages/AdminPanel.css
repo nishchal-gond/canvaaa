@@ -543,3 +543,600 @@
   object-fit: contain;
   display: block;
 }
+
+/* ==========================================================================
+   Canva Direct Integration Card & Controls
+   ========================================================================== */
+
+.canva-card {
+  background: linear-gradient(145deg, #181715 0%, #131211 100%);
+  border: 1px solid rgba(197, 168, 128, 0.28);
+  border-radius: 14px;
+  padding: 26px 28px;
+  margin-bottom: 32px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+.canva-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #c5a880 0%, #8b6e47 50%, #c5a880 100%);
+  opacity: 0.9;
+}
+
+.canva-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 22px;
+  gap: 16px;
+}
+
+.canva-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(197, 168, 128, 0.15);
+  color: var(--accent-gold);
+  border: 1px solid rgba(197, 168, 128, 0.35);
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.canva-heading {
+  font-size: 20px;
+  font-family: var(--font-serif);
+  color: #fff;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.canva-subheading {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 4px 0 0 0;
+}
+
+.canva-config-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #23221f;
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.canva-config-trigger:hover {
+  background: #2c2a26;
+  color: #fff;
+  border-color: var(--accent-gold);
+}
+
+/* Canva API Config Popover / Drawer */
+.canva-config-box {
+  background: #1e1d1a;
+  border: 1px solid rgba(197, 168, 128, 0.3);
+  border-radius: 10px;
+  padding: 18px 22px;
+  margin-bottom: 22px;
+  animation: fadeIn 0.2s ease;
+}
+
+.canva-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.btn-text-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.btn-text-close:hover {
+  color: #fff;
+}
+
+.canva-config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.config-field label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.config-field input {
+  background: #141312;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: #fff;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.config-field input:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+}
+
+.canva-config-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Canva Telemetry / Status 6-Card Grid */
+.canva-telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.canva-stat-card {
+  background: #1c1b18;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 9px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 72px;
+}
+
+.canva-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.canva-stat-val {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e5e3de;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  word-break: break-word;
+}
+
+.canva-stat-val.primary-val {
+  color: #fff;
+  font-size: 14px;
+}
+
+.canva-stat-val.mono-val {
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--accent-gold);
+}
+
+.canva-ext-link {
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.canva-ext-link:hover {
+  color: var(--accent-gold);
+}
+
+.canva-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.canva-status-pill.connected {
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.canva-status-pill.connected .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 8px #4ade80;
+}
+
+.canva-status-pill.disconnected {
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.live-pill {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Remote changes alert */
+.canva-alert-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(234, 179, 8, 0.14);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  color: #fde047;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 20px;
+  animation: pulse 2s infinite ease-in-out;
+}
+
+/* Actions Strip */
+.canva-actions-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 18px 20px;
+  background: #181715;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.canva-action-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-canva-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-canva-action.btn-sync {
+  background: linear-gradient(135deg, #2a2926 0%, #1e1d1b 100%);
+  color: var(--accent-gold);
+  border: 1px solid rgba(197, 168, 128, 0.45);
+}
+
+.btn-canva-action.btn-sync:hover:not(:disabled) {
+  background: linear-gradient(135deg, #363430 0%, #262422 100%);
+  border-color: var(--accent-gold);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(197, 168, 128, 0.2);
+}
+
+.btn-canva-action.btn-canva-publish {
+  background: linear-gradient(135deg, #c5a880 0%, #9e7f55 100%);
+  color: #121110;
+}
+
+.btn-canva-action.btn-canva-publish:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(197, 168, 128, 0.35);
+}
+
+.btn-canva-action.btn-canva-publish.is-active {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  cursor: default;
+}
+
+.btn-canva-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Auto-Sync Controls */
+.canva-autosync-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.autosync-switch-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.autosync-switch-label input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  width: 44px;
+  height: 24px;
+  background-color: #2a2926;
+  border-radius: 9999px;
+  position: relative;
+  transition: all 0.25s ease;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.switch-slider::before {
+  content: '';
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  bottom: 2px;
+  background-color: #d1cfca;
+  border-radius: 50%;
+  transition: all 0.25s ease;
+}
+
+.autosync-switch-label input:checked + .switch-slider {
+  background: #15803d;
+  border-color: #22c55e;
+}
+
+.autosync-switch-label input:checked + .switch-slider::before {
+  transform: translateX(20px);
+  background-color: #fff;
+}
+
+.switch-text {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #e5e3de;
+}
+
+.autosync-interval-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #141312;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.interval-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.interval-pill {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.interval-pill.active {
+  background: var(--accent-gold);
+  color: #121110;
+}
+
+/* Feedback Banner */
+.canva-feedback-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.canva-feedback-banner.loading {
+  background: rgba(59, 130, 246, 0.14);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.canva-feedback-banner.success {
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.canva-feedback-banner.info {
+  background: rgba(197, 168, 128, 0.16);
+  color: var(--accent-gold);
+  border: 1px solid rgba(197, 168, 128, 0.35);
+}
+
+.canva-feedback-banner.error {
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.feedback-dismiss {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.feedback-dismiss:hover {
+  opacity: 1;
+}
+
+/* Canva Sync History Drawer */
+.canva-versions-box {
+  margin-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 14px;
+}
+
+.canva-versions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 6px 0;
+  user-select: none;
+}
+
+.canva-versions-header:hover {
+  color: var(--accent-gold);
+}
+
+.canva-versions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  animation: fadeIn 0.2s ease;
+}
+
+.canva-version-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #191816;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.canva-version-row.active-row {
+  border-color: rgba(74, 222, 128, 0.35);
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.version-info-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.version-code {
+  font-family: monospace;
+  font-weight: 700;
+  color: #fff;
+}
+
+.version-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.version-info-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-active-tag {
+  color: #4ade80;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  background: rgba(34, 197, 94, 0.12);
+  border-radius: 6px;
+}
+
+.btn-version-publish {
+  background: #252421;
+  color: var(--accent-gold);
+  border: 1px solid rgba(197, 168, 128, 0.35);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-version-publish:hover:not(:disabled) {
+  background: var(--accent-gold);
+  color: #121110;
+}
+
+.btn-version-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-version-preview:hover {
+  background: #242320;
+  color: #fff;
+}
+

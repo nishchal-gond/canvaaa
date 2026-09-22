@@ -1,5 +1,6 @@
 // Centralized API configuration helper for local & live deployments
 const STORAGE_KEY = 'lph_backend_api_url';
+export const CLOUD_BACKEND_URL = 'https://canvaaa-p0f3.onrender.com';
 
 export function getApiBaseUrl() {
   if (typeof window !== 'undefined') {
@@ -8,6 +9,11 @@ export function getApiBaseUrl() {
     const paramUrl = params.get('apiUrl') || params.get('api');
     if (paramUrl) {
       const cleanUrl = paramUrl.trim().replace(/\/$/, '');
+      // Purge dead temporary tunnels if passed by stale bookmarks
+      if (cleanUrl.includes('trycloudflare.com')) {
+        localStorage.removeItem(STORAGE_KEY);
+        return CLOUD_BACKEND_URL;
+      }
       localStorage.setItem(STORAGE_KEY, cleanUrl);
       return cleanUrl;
     }
@@ -16,8 +22,11 @@ export function getApiBaseUrl() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const trimmed = saved.trim().replace(/\/$/, '');
-      // If page is on HTTPS, ignore insecure HTTP URLs (prevents browser Mixed Content blocking)
-      if (window.location.protocol === 'https:' && trimmed.startsWith('http://')) {
+      // Purge dead temporary tunnels or localhost from localStorage
+      if (trimmed.includes('trycloudflare.com') || (window.location.hostname.includes('vercel.app') && trimmed.includes('localhost'))) {
+        localStorage.removeItem(STORAGE_KEY);
+      } else if (window.location.protocol === 'https:' && trimmed.startsWith('http://')) {
+        // If page is on HTTPS, ignore insecure HTTP URLs (prevents browser Mixed Content blocking)
         localStorage.removeItem(STORAGE_KEY);
       } else {
         return trimmed;
@@ -32,7 +41,7 @@ export function getApiBaseUrl() {
 
   // 4. Default live cloud backend fallback if on Vercel preview/production
   if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-    return 'https://canvaaa-p0f3.onrender.com';
+    return CLOUD_BACKEND_URL;
   }
 
   // 5. Local development fallback (uses relative path proxied by Vite)

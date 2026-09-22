@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import presentationsRouter from './routes/presentations.js';
 import displayRouter from './routes/display.js';
+import canvaRouter from './routes/canva.js';
+import { startCanvaSyncWorker } from './services/canvaSyncWorker.js';
 import { pool } from './config/db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,6 +33,7 @@ app.use('/uploads', express.static(uploadsDir));
 // API Routes
 app.use('/api/presentations', presentationsRouter);
 app.use('/api/display', displayRouter);
+app.use('/api/canva', canvaRouter);
 
 import { runMigrations } from './db/migrate.js';
 
@@ -44,7 +47,8 @@ app.get('/', (req, res) => {
       health: '/api/health',
       display: '/api/display/current',
       stream: '/api/display/stream',
-      presentations: '/api/presentations'
+      presentations: '/api/presentations',
+      canva: '/api/canva/status'
     }
   });
 });
@@ -68,6 +72,7 @@ const server = app.listen(PORT, async () => {
 
   try {
     await runMigrations();
+    startCanvaSyncWorker(30);
   } catch (err) {
     console.warn('Startup migration check warning:', err.message);
   }

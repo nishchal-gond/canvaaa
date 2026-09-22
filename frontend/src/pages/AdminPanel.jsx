@@ -15,7 +15,13 @@ import {
   Radio,
   Settings,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Sparkles,
+  Check,
+  Copy,
+  Sliders,
+  Eye,
+  ArrowRight
 } from 'lucide-react';
 import './AdminPanel.css';
 import { apiUrl, assetUrl, getApiBaseUrl, setApiBaseUrl } from '../config/api';
@@ -32,6 +38,20 @@ export default function AdminPanel() {
   const [backendUrl, setBackendUrlState] = useState(getApiBaseUrl());
   const [showBackendConfig, setShowBackendConfig] = useState(false);
   const [customUrlInput, setCustomUrlInput] = useState(getApiBaseUrl());
+
+  // Canva Direct Sync State
+  const [canvaStatus, setCanvaStatus] = useState(null);
+  const [canvaVersions, setCanvaVersions] = useState([]);
+  const [isCanvaSyncing, setIsCanvaSyncing] = useState(false);
+  const [canvaFeedback, setCanvaFeedback] = useState(null);
+  const [showCanvaConfig, setShowCanvaConfig] = useState(false);
+  const [showVersionsDrawer, setShowVersionsDrawer] = useState(false);
+  const [canvaConfigForm, setCanvaConfigForm] = useState({
+    design_id: 'DAHVb9pmJzQ',
+    design_title: 'Copy of Dashboard Screen 16/9',
+    access_token: '',
+    simulation_mode: false
+  });
 
   const fileInputRef = useRef(null);
   const [scrollY, setScrollY] = useState(0);
@@ -112,13 +132,218 @@ export default function AdminPanel() {
     }
   };
 
+  // Helper: Format timestamps cleanly
+  const formatTimestamp = (ts) => {
+    if (!ts) return 'Never';
+    if (typeof ts === 'string' && /^\d+$/.test(ts)) {
+      const num = parseInt(ts, 10);
+      const date = new Date(num > 1e11 ? num : num * 1000);
+      return date.toLocaleString();
+    }
+    const date = new Date(ts);
+    if (isNaN(date.getTime())) return String(ts);
+    return date.toLocaleString();
+  };
+
+  // Load Canva connection status and versions
+  const loadCanvaStatus = async () => {
+    try {
+      const [statusRes, versionsRes] = await Promise.all([
+        fetch(apiUrl('/api/canva/status')),
+        fetch(apiUrl('/api/canva/versions'))
+      ]);
+      if (statusRes.ok) {
+        const data = await statusRes.json();
+        setCanvaStatus(data);
+        if (data.connection) {
+          setCanvaConfigForm((prev) => ({
+            ...prev,
+            design_id: data.connection.design_id || 'DAHVb9pmJzQ',
+            design_title: data.connection.design_title || 'Copy of Dashboard Screen 16/9'
+          }));
+        }
+      }
+      if (versionsRes.ok) {
+        const vData = await versionsRes.json();
+        setCanvaVersions(vData.versions || []);
+      }
+    } catch (err) {
+      console.error('Failed to load Canva status:', err);
+    }
+  };
+
+  // Manual Trigger: Sync From Canva
+  const handleSyncCanva = async (force = false) => {
+    setIsCanvaSyncing(true);
+    setCanvaFeedback({
+      type: 'loading',
+      message: 'Connecting to Canva API & fetching latest design export...'
+    });
+    try {
+      const res = await fetch(apiUrl('/api/canva/sync'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          design_id: canvaStatus?.connection?.design_id || 'DAHVb9pmJzQ',
+          force
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Canva sync failed');
+
+      if (data.already_up_to_date) {
+        setCanvaFeedback({
+          type: 'info',
+          message: '⚡ Canva design is already up to date. (Canva timestamp matches latest sync).'
+        });
+      } else {
+        setCanvaFeedback({
+          type: 'success',
+          message: `✅ Synced version ${data.version?.version_label || ''} with ${data.version?.slide_count} slides!`
+        });
+        if (data.version?.presentation_id) {
+          await loadPresentations();
+          await loadPresentationDetails(data.version.presentation_id);
+        }
+      }
+      await loadCanvaStatus();
+    } catch (err) {
+      setCanvaFeedback({
+        type: 'error',
+        message: `❌ Canva sync error: ${err.message}`
+      });
+    } finally {
+      setIsCanvaSyncing(false);
+    }
+  };
+
+  // Operator Action: Publish Canva Version
+  const handlePublishCanvaVersion = async (versionId) => {
+    if (!versionId) return;
+    setIsProcessing(true);
+    try {
+      const res = await fetch(apiUrl(`/api/canva/publish/${versionId}`), {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to publish Canva version');
+
+      setCanvaFeedback({
+        type: 'success',
+        message: '🚀 Canva version published live to LG 98" Display!'
+      });
+      await loadCanvaStatus();
+      await loadDisplayState();
+      await loadPresentations();
+    } catch (err) {
+      setCanvaFeedback({
+        type: 'error',
+        message: `Publish error: ${err.message}`
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Toggle Auto-Sync
+  const handleToggleAutoSync = async (enabled) => {
+    try {
+      const res = await fetch(apiUrl('/api/canva/auto-sync'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      if (res.ok) {
+        await loadCanvaStatus();
+      }
+    } catch (err) {
+      console.error('Failed to toggle auto sync:', err);
+    }
+  };
+
+  // Change Auto-Sync Interval
+  const handleChangeSyncInterval = async (intervalSeconds) => {
+    try {
+      const res = await fetch(apiUrl('/api/canva/auto-sync'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interval_seconds: intervalSeconds })
+      });
+      if (res.ok) {
+        await loadCanvaStatus();
+      }
+    } catch (err) {
+      console.error('Failed to update sync interval:', err);
+    }
+  };
+
+  // Save Canva Connection Credentials
+  const handleSaveCanvaConfig = async () => {
+    try {
+      const res = await fetch(apiUrl('/api/canva/connect'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(canvaConfigForm)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update Canva connection');
+      setShowCanvaConfig(false);
+      await loadCanvaStatus();
+      setCanvaFeedback({
+        type: 'success',
+        message: '✅ Canva connection settings saved!'
+      });
+    } catch (err) {
+      alert(`Failed to save Canva config: ${err.message}`);
+    }
+  };
+
+  // Launch Canva 1-Click OAuth 2.0 PKCE Flow
+  const handleStartCanvaOAuth = async () => {
+    try {
+      setCanvaFeedback({
+        type: 'loading',
+        message: 'Connecting to Canva OAuth 2.0 authorization server...'
+      });
+      const res = await fetch(apiUrl('/api/canva/auth/start'));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to initialize Canva authorization');
+      if (data.auth_url) {
+        window.location.href = data.auth_url;
+      }
+    } catch (err) {
+      setCanvaFeedback({
+        type: 'error',
+        message: `Canva OAuth Error: ${err.message}`
+      });
+    }
+  };
+
   useEffect(() => {
     loadDisplayState();
     loadPresentations();
+    loadCanvaStatus();
+
+    // Check if returning from Canva OAuth
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('canva_connected') === 'true') {
+      setCanvaFeedback({
+        type: 'success',
+        message: '🎉 Canva successfully authorized & connected via official OAuth 2.0!'
+      });
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get('canva_error')) {
+      setCanvaFeedback({
+        type: 'error',
+        message: `Canva Authorization Failed: ${params.get('canva_error')}`
+      });
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
 
     // Auto-sync polling every 3 seconds to guarantee operator panel is always live
     const syncInterval = setInterval(() => {
       loadDisplayState();
+      loadCanvaStatus();
     }, 3000);
 
     let eventSource = null;
@@ -139,6 +364,7 @@ export default function AdminPanel() {
           const data = JSON.parse(e.data);
           setDisplayState(data);
           loadPresentations();
+          loadCanvaStatus();
         } catch (err) {
           console.error(err);
         }
@@ -151,6 +377,16 @@ export default function AdminPanel() {
         } catch (err) {
           console.error(err);
         }
+      });
+
+      eventSource.addEventListener('CANVA_SYNC_COMPLETED', () => {
+        loadCanvaStatus();
+        loadPresentations();
+        setIsCanvaSyncing(false);
+      });
+
+      eventSource.addEventListener('CANVA_AUTO_SYNC_CHANGED', () => {
+        loadCanvaStatus();
       });
     } catch (err) {
       console.warn('SSE connection error:', err);
@@ -319,6 +555,17 @@ export default function AdminPanel() {
   const activeMediaType = displayState?.state?.media_type || 'presentation';
   const activeSlidesCount = displayState?.state?.page_count || 0;
   const connectedDisplays = displayState?.connected_displays || 0;
+
+  // Canva Computed Variables
+  const latestCanvaVersion = canvaStatus?.latest_version;
+  const isLatestVersionCurrentlyActive = Boolean(
+    latestCanvaVersion &&
+      displayState?.state?.active_presentation_id === latestCanvaVersion.presentation_id
+  );
+  const canvaDesignTitle =
+    canvaStatus?.connection?.design_title || 'Copy of Dashboard Screen 16/9';
+  const canvaDesignId = canvaStatus?.connection?.design_id || 'DAHVb9pmJzQ';
+  const isCanvaConnected = canvaStatus?.connection?.status === 'connected';
 
   return (
     <div className="admin-container">
@@ -497,6 +744,385 @@ export default function AdminPanel() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Canva Direct Integration Section */}
+      <div className="canva-card">
+        <div className="canva-card-header">
+          <div className="canva-title-group">
+            <div className="canva-pill-badge">
+              <Sparkles size={14} />
+              <span>CANVA DIRECT CONNECT</span>
+            </div>
+            <h2 className="canva-heading">Canva Design Synchronization</h2>
+            <p className="canva-subheading">
+              Official Design Source of Truth • Continuous Cloud & 4K Display Synchronization
+            </p>
+          </div>
+          <div className="canva-header-actions">
+            <button
+              type="button"
+              className="canva-config-trigger"
+              onClick={() => setShowCanvaConfig(!showCanvaConfig)}
+              title="Configure Canva API Credentials & Design Target"
+            >
+              <Settings size={15} />
+              <span>Canva API Settings</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Canva API Credentials / Target Drawer */}
+        {showCanvaConfig && (
+          <div className="canva-config-box">
+            <div className="canva-config-header">
+              <div>
+                <strong>Canva Connect API Configuration</strong>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                  Manage Canva Developer credentials and cloud connection mode
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn-text-close"
+                onClick={() => setShowCanvaConfig(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="canva-config-grid">
+              <div className="config-field">
+                <label>Canva Design ID</label>
+                <input
+                  type="text"
+                  value={canvaConfigForm.design_id}
+                  onChange={(e) =>
+                    setCanvaConfigForm({ ...canvaConfigForm, design_id: e.target.value })
+                  }
+                  placeholder="e.g. DAHVb9pmJzQ"
+                />
+              </div>
+              <div className="config-field">
+                <label>Design Title</label>
+                <input
+                  type="text"
+                  value={canvaConfigForm.design_title}
+                  onChange={(e) =>
+                    setCanvaConfigForm({ ...canvaConfigForm, design_title: e.target.value })
+                  }
+                  placeholder="e.g. Copy of Dashboard Screen 16/9"
+                />
+              </div>
+              <div className="config-field" style={{ gridColumn: '1 / -1' }}>
+                <label>Canva Bearer Access Token (or "simulation" for sandbox mode)</label>
+                <input
+                  type="password"
+                  value={canvaConfigForm.access_token}
+                  onChange={(e) =>
+                    setCanvaConfigForm({ ...canvaConfigForm, access_token: e.target.value })
+                  }
+                  placeholder="Enter Canva OAuth Bearer Token or 'simulation'"
+                />
+              </div>
+            </div>
+            <div className="canva-config-footer">
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Status:{' '}
+                <strong style={{ color: isCanvaConnected ? '#4ade80' : '#f87171' }}>
+                  {isCanvaConnected ? 'Connected to Canva' : 'Disconnected'}
+                </strong>
+                {canvaStatus?.connection?.access_token === 'simulation' && (
+                  <span> (Sandbox Simulation Active)</span>
+                )}
+              </span>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn-canva-oauth"
+                  onClick={handleStartCanvaOAuth}
+                  style={{
+                    background: 'linear-gradient(135deg, #7d2ae8 0%, #00c4cc 100%)',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Sparkles size={15} />
+                  <span>Authorize with Canva (1-Click)</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() =>
+                    setCanvaConfigForm({
+                      ...canvaConfigForm,
+                      access_token: 'simulation'
+                    })
+                  }
+                >
+                  Use Sandbox
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleSaveCanvaConfig}
+                >
+                  Save Connection
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Canva Metadata & Status Grid */}
+        <div className="canva-telemetry-grid">
+          <div className="canva-stat-card">
+            <div className="canva-stat-label">CANVA DESIGN</div>
+            <div className="canva-stat-val primary-val" title={canvaDesignTitle}>
+              {canvaDesignTitle}
+            </div>
+          </div>
+
+          <div className="canva-stat-card">
+            <div className="canva-stat-label">DESIGN ID</div>
+            <div className="canva-stat-val mono-val">
+              <span>{canvaDesignId}</span>
+              <a
+                href={`https://www.canva.com/design/${canvaDesignId}/view`}
+                target="_blank"
+                rel="noreferrer"
+                title="Open in Canva (New Tab)"
+                className="canva-ext-link"
+              >
+                <ExternalLink size={13} />
+              </a>
+            </div>
+          </div>
+
+          <div className="canva-stat-card">
+            <div className="canva-stat-label">STATUS</div>
+            <div className="canva-stat-val">
+              <span
+                className={`canva-status-pill ${
+                  isCanvaConnected ? 'connected' : 'disconnected'
+                }`}
+              >
+                <span className="dot" />
+                {isCanvaConnected ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
+          </div>
+
+          <div className="canva-stat-card">
+            <div className="canva-stat-label">LAST CANVA VERSION</div>
+            <div className="canva-stat-val mono-val" style={{ fontSize: '13px' }}>
+              {latestCanvaVersion?.version_label ||
+                (canvaStatus?.connection?.last_canva_updated_at
+                  ? `v${canvaStatus.connection.last_canva_updated_at}`
+                  : '—')}
+            </div>
+          </div>
+
+          <div className="canva-stat-card">
+            <div className="canva-stat-label">LAST SYNC</div>
+            <div className="canva-stat-val" style={{ fontSize: '13px' }}>
+              {formatTimestamp(canvaStatus?.connection?.last_synced_at)}
+            </div>
+          </div>
+
+          <div className="canva-stat-card">
+            <div className="canva-stat-label">LAST PUBLISHED</div>
+            <div className="canva-stat-val" style={{ fontSize: '13px' }}>
+              {isLatestVersionCurrentlyActive ? (
+                <span className="live-pill">● Playing Live</span>
+              ) : latestCanvaVersion?.published_at ? (
+                formatTimestamp(latestCanvaVersion.published_at)
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>Not yet published</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Remote Unseen Changes Notice */}
+        {canvaStatus?.canva_remote?.has_unseen_changes && (
+          <div className="canva-alert-badge">
+            <Sparkles size={16} />
+            <span>
+              <strong>New Canva changes detected!</strong> Canva design has been edited since last sync. Press "SYNC FROM CANVA" below to fetch updates.
+            </span>
+          </div>
+        )}
+
+        {/* Primary Action Row: SYNC, PUBLISH, AUTO-SYNC */}
+        <div className="canva-actions-strip">
+          <div className="canva-action-buttons">
+            <button
+              type="button"
+              className="btn-canva-action btn-sync"
+              onClick={() => handleSyncCanva(false)}
+              disabled={isCanvaSyncing}
+            >
+              <RefreshCw size={17} className={isCanvaSyncing ? 'spin' : ''} />
+              <span>{isCanvaSyncing ? 'SYNCING FROM CANVA...' : 'SYNC FROM CANVA'}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`btn-canva-action btn-canva-publish ${
+                isLatestVersionCurrentlyActive ? 'is-active' : ''
+              }`}
+              onClick={() => handlePublishCanvaVersion(latestCanvaVersion?.id)}
+              disabled={!latestCanvaVersion || isProcessing}
+              title={
+                isLatestVersionCurrentlyActive
+                  ? 'Currently playing live on LG Display. Click to re-broadcast.'
+                  : 'Publish this Canva presentation to LG Display'
+              }
+            >
+              {isLatestVersionCurrentlyActive ? (
+                <>
+                  <CheckCircle size={17} />
+                  <span>LIVE ON DISPLAY (CLICK TO RE-PUBLISH)</span>
+                </>
+              ) : (
+                <>
+                  <Play size={17} />
+                  <span>PUBLISH TO DISPLAY</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Auto Sync Toggle & Interval */}
+          <div className="canva-autosync-group">
+            <label className="autosync-switch-label">
+              <input
+                type="checkbox"
+                checked={Boolean(canvaStatus?.connection?.auto_sync_enabled)}
+                onChange={(e) => handleToggleAutoSync(e.target.checked)}
+              />
+              <span className="switch-slider" />
+              <span className="switch-text">AUTO SYNC</span>
+            </label>
+
+            {canvaStatus?.connection?.auto_sync_enabled && (
+              <div className="autosync-interval-pills">
+                <span className="interval-label">Interval:</span>
+                {[30, 60, 120, 300].map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    className={`interval-pill ${
+                      (canvaStatus?.connection?.poll_interval_seconds || 60) === sec
+                        ? 'active'
+                        : ''
+                    }`}
+                    onClick={() => handleChangeSyncInterval(sec)}
+                  >
+                    {sec < 60 ? `${sec}s` : `${sec / 60}m`}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Canva Sync Feedback Banner */}
+        {canvaFeedback && (
+          <div className={`canva-feedback-banner ${canvaFeedback.type}`}>
+            {canvaFeedback.type === 'loading' && <RefreshCw size={16} className="spin" />}
+            {canvaFeedback.type === 'success' && <CheckCircle size={16} />}
+            {canvaFeedback.type === 'info' && <Sparkles size={16} />}
+            {canvaFeedback.type === 'error' && <AlertCircle size={16} />}
+            <span>{canvaFeedback.message}</span>
+            <button
+              type="button"
+              className="feedback-dismiss"
+              onClick={() => setCanvaFeedback(null)}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Synced Canva Versions History Drawer */}
+        {canvaVersions && canvaVersions.length > 0 && (
+          <div className="canva-versions-box">
+            <div
+              className="canva-versions-header"
+              onClick={() => setShowVersionsDrawer(!showVersionsDrawer)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={15} color="var(--accent-gold)" />
+                <span style={{ fontWeight: '600', fontSize: '13px' }}>
+                  Canva Sync History ({canvaVersions.length} Version{canvaVersions.length === 1 ? '' : 's'})
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  {showVersionsDrawer ? 'Hide' : 'Show History'}
+                </span>
+                {showVersionsDrawer ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </div>
+            </div>
+
+            {showVersionsDrawer && (
+              <div className="canva-versions-list">
+                {canvaVersions.map((v) => {
+                  const isThisActive =
+                    v.is_published ||
+                    displayState?.state?.presentation_id === v.presentation_id;
+                  return (
+                    <div key={v.id} className={`canva-version-row ${isThisActive ? 'active-row' : ''}`}>
+                      <div className="version-info-left">
+                        <span className="version-code">{v.version_label || v.id.slice(0, 8)}</span>
+                        <span className="version-meta">
+                          {v.slide_count} Slides • {v.export_format} • Synced {formatTimestamp(v.synced_at)}
+                        </span>
+                      </div>
+                      <div className="version-info-right">
+                        {isThisActive ? (
+                          <span className="version-active-tag">● Live on Display</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-version-publish"
+                            onClick={() => handlePublishCanvaVersion(v.id)}
+                            disabled={isProcessing}
+                          >
+                            Publish
+                          </button>
+                        )}
+                        {v.presentation_id && (
+                          <button
+                            type="button"
+                            className="btn-version-preview"
+                            onClick={() => {
+                              loadPresentationDetails(v.presentation_id);
+                              scrollToBottom();
+                            }}
+                            title="Preview this version's slides below"
+                          >
+                            <Eye size={13} />
+                            <span>Preview</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Upload Presentation or Video Card */}

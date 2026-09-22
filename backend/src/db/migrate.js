@@ -51,6 +51,44 @@ export async function runMigrations() {
     INSERT INTO display_state (id, is_paused, rotation_interval, updated_at)
     VALUES (1, false, 10, NOW())
     ON CONFLICT (id) DO NOTHING;
+
+    -- Phase 2A: Canva Direct Sync Tables
+    CREATE TABLE IF NOT EXISTS canva_connections (
+      id INT PRIMARY KEY DEFAULT 1,
+      design_id VARCHAR(100) NOT NULL DEFAULT 'DAHVb9pmJzQ',
+      design_title VARCHAR(255) DEFAULT 'Copy of Dashboard Screen 16/9',
+      access_token TEXT,
+      refresh_token TEXT,
+      token_expires_at TIMESTAMP WITH TIME ZONE,
+      auto_sync_enabled BOOLEAN DEFAULT false,
+      poll_interval_seconds INT DEFAULT 60,
+      last_canva_updated_at BIGINT DEFAULT 0,
+      last_synced_at TIMESTAMP WITH TIME ZONE,
+      last_published_at TIMESTAMP WITH TIME ZONE,
+      status VARCHAR(50) DEFAULT 'disconnected',
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      CONSTRAINT single_canva_connection_check CHECK (id = 1)
+    );
+
+    INSERT INTO canva_connections (id, design_id, design_title, status, updated_at)
+    VALUES (1, 'DAHVb9pmJzQ', 'Copy of Dashboard Screen 16/9', 'disconnected', NOW())
+    ON CONFLICT (id) DO NOTHING;
+
+    CREATE TABLE IF NOT EXISTS canva_versions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      design_id VARCHAR(100) NOT NULL,
+      canva_updated_at BIGINT NOT NULL,
+      version_label VARCHAR(100),
+      export_format VARCHAR(20) DEFAULT 'PDF',
+      presentation_id UUID REFERENCES presentations(id) ON DELETE CASCADE,
+      slide_count INT DEFAULT 0,
+      file_path VARCHAR(500),
+      status VARCHAR(50) DEFAULT 'pending',
+      is_published BOOLEAN DEFAULT false,
+      synced_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      published_at TIMESTAMP WITH TIME ZONE,
+      CONSTRAINT unique_canva_design_version UNIQUE (design_id, canva_updated_at)
+    );
   `;
 
   try {
@@ -62,7 +100,7 @@ export async function runMigrations() {
   }
 }
 
-if (process.argv[1].endsWith('migrate.js')) {
+if (process.argv[1]?.endsWith('migrate.js')) {
   runMigrations()
     .then(() => pool.end())
     .catch((err) => {
