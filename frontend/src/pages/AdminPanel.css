@@ -52,6 +52,20 @@
   margin-bottom: 32px;
 }
 
+.admin-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.admin-header-logo {
+  height: 56px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6));
+}
+
 .brand-title {
   font-family: var(--font-serif);
   font-size: 26px;

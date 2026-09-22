@@ -305,9 +305,12 @@ export default function AdminPanel() {
     <div className="admin-container">
       {/* Header */}
       <header className="admin-header">
-        <div>
-          <h1 className="brand-title">LPH LUXURY PROPERTIES HUB</h1>
-          <p className="brand-sub">Commercial Display Operations • LG 98TR3DK-BM</p>
+        <div className="admin-header-brand">
+          <img src="/lph-logo.png" alt="LPH Logo" className="admin-header-logo" />
+          <div>
+            <h1 className="brand-title">LPH LUXURY PROPERTIES HUB</h1>
+            <p className="brand-sub">Commercial Display Operations • LG 98TR3DK-BM</p>
+          </div>
         </div>
         <div className="header-actions">
           {/* Backend Connection Status Badge & Settings */}
@@ -508,9 +511,11 @@ export default function AdminPanel() {
             Drag & drop your exported Canva presentation or video here, or click to browse.
           </p>
           <div className="format-tags">
-            <span className="format-tag">PDF Presentation</span>
-            <span className="format-tag">PowerPoint (PPTX)</span>
+            <span className="format-tag" style={{ background: 'rgba(197, 168, 128, 0.2)', borderColor: 'var(--accent-gold)', color: 'var(--accent-gold)' }}>
+              ⭐ PDF Presentation (Instant 1s Processing)
+            </span>
             <span className="format-tag">MP4 Video</span>
+            <span className="format-tag">PowerPoint (PPTX)</span>
           </div>
         </div>
 

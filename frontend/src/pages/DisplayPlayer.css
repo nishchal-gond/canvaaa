@@ -150,19 +150,19 @@
   padding: 40px;
 }
 
-.empty-logo {
-  font-family: var(--font-serif);
-  font-size: 48px;
-  letter-spacing: 0.2em;
-  color: var(--accent-gold);
-  margin-bottom: 12px;
+.empty-logo-img {
+  max-width: 480px;
+  width: 42vw;
+  height: auto;
+  object-fit: contain;
+  margin-bottom: 36px;
+  filter: drop-shadow(0 15px 40px rgba(0, 0, 0, 0.7));
+  animation: logo-glow 4s infinite ease-in-out alternate;
 }
 
-.empty-sub {
-  font-size: 18px;
-  color: var(--text-secondary);
-  letter-spacing: 0.05em;
-  margin-bottom: 24px;
+@keyframes logo-glow {
+  0% { opacity: 0.9; transform: scale(0.99); }
+  100% { opacity: 1; transform: scale(1.01); }
 }
 
 .empty-help {

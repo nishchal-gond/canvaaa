@@ -56,6 +56,11 @@ def render_pptx(pptx_path, output_dir):
             "page_count": slide_count,
             "slides": slides
         }
+    except ImportError:
+        return {
+            "success": False,
+            "error": "PPTX format requires Microsoft Office (Windows). For instant 1-second 4K cloud processing, export from Canva as 'PDF Standard' or 'MP4 Video'!"
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
     finally:

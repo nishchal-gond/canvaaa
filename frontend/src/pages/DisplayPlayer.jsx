@@ -353,8 +353,7 @@ export default function DisplayPlayer() {
       <div className="display-stage">
         {!hasContent ? (
           <div className="display-empty-state">
-            <div className="empty-logo">LPH</div>
-            <div className="empty-sub">LUXURY PROPERTIES HUB</div>
+            <img src="/lph-logo.png" alt="LPH Luxury Properties Hub" className="empty-logo-img" />
             <div className="empty-help">
               Awaiting Presentation or Video. Open <strong>/admin</strong> to upload and publish.
             </div>
