@@ -21,7 +21,8 @@ import {
   Copy,
   Sliders,
   Eye,
-  ArrowRight
+  ArrowRight,
+  Trash2
 } from 'lucide-react';
 import './AdminPanel.css';
 import { apiUrl, assetUrl, getApiBaseUrl, setApiBaseUrl } from '../config/api';
@@ -239,6 +240,35 @@ export default function AdminPanel() {
       setCanvaFeedback({
         type: 'error',
         message: `Publish error: ${err.message}`
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Operator Action: Delete Presentation (Purge)
+  const handleDeletePresentation = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this presentation? This will permanently delete its slides and files from the server.')) {
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const res = await fetch(apiUrl(`/api/presentations/${id}`), {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete presentation');
+
+      setUploadFeedback({
+        type: 'success',
+        message: '🗑️ Presentation and media files deleted successfully.'
+      });
+      await loadPresentations();
+      await loadDisplayState();
+    } catch (err) {
+      setUploadFeedback({
+        type: 'error',
+        message: `Delete error: ${err.message}`
       });
     } finally {
       setIsProcessing(false);
@@ -1162,6 +1192,10 @@ export default function AdminPanel() {
             <span className="format-tag">MP4 / MOV Video</span>
             <span className="format-tag">PowerPoint (PPTX)</span>
           </div>
+          <div style={{ fontSize: '12px', color: 'var(--accent-gold)', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+            <Sparkles size={14} />
+            <span>Auto-Purge Active: When you upload something new, older presentations & files are automatically deleted.</span>
+          </div>
         </div>
 
         {uploadFeedback && (
@@ -1184,14 +1218,40 @@ export default function AdminPanel() {
                 {selectedPresentation.original_format}
               </span>
             </div>
-            <button
-              className="btn-publish"
-              onClick={() => handlePublish(selectedPresentation.id)}
-              disabled={isProcessing}
-            >
-              <Play size={18} />
-              <span>PUBLISH TO LG DISPLAY</span>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn-delete"
+                onClick={() => handleDeletePresentation(selectedPresentation.id)}
+                disabled={isProcessing}
+                title="Delete this presentation and all its slides from the server"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#f87171',
+                  borderRadius: '8px',
+                  padding: '9px 14px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: isProcessing ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Trash2 size={16} />
+                <span>DELETE</span>
+              </button>
+              <button
+                className="btn-publish"
+                onClick={() => handlePublish(selectedPresentation.id)}
+                disabled={isProcessing}
+              >
+                <Play size={18} />
+                <span>PUBLISH TO LG DISPLAY</span>
+              </button>
+            </div>
           </div>
 
           <div className="presentation-card active-pres">

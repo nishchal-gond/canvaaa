@@ -94,9 +94,61 @@ export async function purgeOldPresentations(keepPresentationId = null) {
       }
 
       // 4. Remove database records
+      try { await query('DELETE FROM canva_versions WHERE presentation_id = $1', [row.id]); } catch {}
       await query('DELETE FROM slides WHERE presentation_id = $1', [row.id]);
       await query('DELETE FROM presentations WHERE id = $1', [row.id]);
     }
+
+    // 5. Sweep disk for any orphan slide and thumbnail directories
+    if (fs.existsSync(slidesBaseDir)) {
+      try {
+        const slideFolders = fs.readdirSync(slidesBaseDir);
+        for (const folder of slideFolders) {
+          if (keepPresentationId && folder === keepPresentationId) continue;
+          const target = path.join(slidesBaseDir, folder);
+          try { fs.rmSync(target, { recursive: true, force: true }); } catch {}
+        }
+      } catch {}
+    }
+
+    if (fs.existsSync(thumbsBaseDir)) {
+      try {
+        const thumbFolders = fs.readdirSync(thumbsBaseDir);
+        for (const folder of thumbFolders) {
+          if (keepPresentationId && folder === keepPresentationId) continue;
+          const target = path.join(thumbsBaseDir, folder);
+          try { fs.rmSync(target, { recursive: true, force: true }); } catch {}
+        }
+      } catch {}
+    }
+
+    // 6. Sweep disk for any orphan docs or video files not belonging to the kept presentation
+    let keepFilename = null;
+    if (keepPresentationId) {
+      const keepRes = await query('SELECT filename FROM presentations WHERE id = $1', [keepPresentationId]);
+      keepFilename = keepRes.rows[0]?.filename || null;
+    }
+
+    if (fs.existsSync(docsDir)) {
+      try {
+        const docFiles = fs.readdirSync(docsDir);
+        for (const file of docFiles) {
+          if (keepFilename && file === keepFilename) continue;
+          try { fs.unlinkSync(path.join(docsDir, file)); } catch {}
+        }
+      } catch {}
+    }
+
+    if (fs.existsSync(videosDir)) {
+      try {
+        const videoFiles = fs.readdirSync(videosDir);
+        for (const file of videoFiles) {
+          if (keepFilename && file === keepFilename) continue;
+          try { fs.unlinkSync(path.join(videosDir, file)); } catch {}
+        }
+      } catch {}
+    }
+
     if (res.rows.length > 0) {
       console.log(`🧹 Auto-purged ${res.rows.length} old presentation(s) and their disk files.`);
     }

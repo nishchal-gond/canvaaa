@@ -2,6 +2,7 @@ import express from 'express';
 import { query } from '../config/db.js';
 import { sseBroadcaster } from '../services/sseBroadcaster.js';
 import { getCurrentDisplayPayload } from './display.js';
+import { purgeOldPresentations } from './presentations.js';
 import {
   getCanvaConnection,
   updateCanvaConnection,
@@ -249,11 +250,13 @@ router.post('/publish/:versionId', async (req, res) => {
     const version = versionRes.rows[0];
     const presentationId = version.presentation_id;
 
-    // 1. Mark this presentation active and all others inactive
-    await query(`UPDATE presentations SET is_active = false WHERE id != $1`, [presentationId]);
+    // 1. Purge all older presentations and disk files so only this published presentation remains
+    await purgeOldPresentations(presentationId);
+
+    // 2. Mark this presentation active
     await query(`UPDATE presentations SET is_active = true WHERE id = $1`, [presentationId]);
 
-    // 2. Mark this version as published, others false
+    // 3. Mark this version as published, others false
     await query(`UPDATE canva_versions SET is_published = false WHERE design_id = $1`, [version.design_id]);
     await query(`UPDATE canva_versions SET is_published = true, published_at = NOW() WHERE id = $1`, [versionId]);
 

@@ -1,6 +1,7 @@
 import express from 'express';
 import { query } from '../config/db.js';
 import { sseBroadcaster } from '../services/sseBroadcaster.js';
+import { purgeOldPresentations } from './presentations.js';
 
 const router = express.Router();
 
@@ -90,11 +91,13 @@ router.post('/publish', async (req, res) => {
       return res.status(404).json({ error: 'Presentation not found.' });
     }
 
-    // 2. Mark this presentation active and all others inactive
-    await query(`UPDATE presentations SET is_active = false WHERE id != $1`, [presentation_id]);
+    // 2. Automatically purge all older presentations and disk files
+    await purgeOldPresentations(presentation_id);
+
+    // 3. Mark this presentation active
     await query(`UPDATE presentations SET is_active = true WHERE id = $1`, [presentation_id]);
 
-    // 3. Update display_state
+    // 4. Update display_state
     await query(
       `UPDATE display_state
        SET active_presentation_id = $1,
