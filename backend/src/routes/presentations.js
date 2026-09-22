@@ -23,11 +23,14 @@ const thumbsBaseDir = path.join(uploadsBaseDir, 'thumbnails');
   fs.mkdirSync(dir, { recursive: true });
 });
 
+const SUPPORTED_DOC_EXTS = ['.pdf', '.pptx'];
+const SUPPORTED_VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.m4v', '.mkv'];
+
 // Configure multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    if (ext === '.mp4') {
+    if (SUPPORTED_VIDEO_EXTS.includes(ext)) {
       cb(null, videosDir);
     } else {
       cb(null, docsDir);
@@ -42,20 +45,20 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 250 * 1024 * 1024 }, // 250MB limit for high-res video / presentations
+  limits: { fileSize: 250 * 1024 * 1024 }, // 250MB limit
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    if (['.pdf', '.pptx', '.mp4'].includes(ext)) {
+    if ([...SUPPORTED_DOC_EXTS, ...SUPPORTED_VIDEO_EXTS].includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Supported formats are PDF, PPTX, and MP4.'));
+      cb(new Error(`Unsupported format (${ext}). Supported formats are PDF, PPTX, MP4, MOV, and WebM.`));
     }
   }
 });
 
 /**
  * POST /api/presentations/upload
- * Unified multi-format ingestion endpoint for PDF, PPTX, and MP4
+ * Unified multi-format ingestion endpoint for PDF, PPTX, and MP4/MOV/WebM
  */
 router.post('/upload', upload.single('presentation'), async (req, res) => {
   if (!req.file) {
@@ -73,10 +76,12 @@ router.post('/upload', upload.single('presentation'), async (req, res) => {
   if (ext === '.pptx') {
     originalFormat = 'PPTX';
     mediaType = 'presentation';
-  } else if (ext === '.mp4') {
-    originalFormat = 'MP4';
+  } else if (SUPPORTED_VIDEO_EXTS.includes(ext)) {
+    originalFormat = ext.replace('.', '').toUpperCase();
     mediaType = 'video';
   }
+
+  let presentationId = null;
 
   try {
     // 1. Create initial presentation record
@@ -89,7 +94,7 @@ router.post('/upload', upload.single('presentation'), async (req, res) => {
     );
 
     const presentation = presResult.rows[0];
-    const presentationId = presentation.id;
+    presentationId = presentation.id;
 
     let slideRows = [];
     let pageCount = 0;
@@ -136,18 +141,18 @@ router.post('/upload', upload.single('presentation'), async (req, res) => {
       }
 
     } else if (mediaType === 'video') {
-      // Video handling (MP4) -> Do NOT convert to slides; extract metadata and poster thumbnail
+      // Video handling (MP4 / MOV / WebM)
       const thumbDir = path.join(thumbsBaseDir, presentationId);
       const thumbFileName = 'poster.jpg';
       const thumbPath = path.join(thumbDir, thumbFileName);
 
       const probeResult = await processVideo(filePath, thumbPath);
-      videoDuration = probeResult.duration;
-      videoWidth = probeResult.width;
-      videoHeight = probeResult.height;
+      videoDuration = probeResult.duration || 10;
+      videoWidth = probeResult.width || 1920;
+      videoHeight = probeResult.height || 1080;
       pageCount = 1;
       mediaUrl = `/uploads/videos/${req.file.filename}`;
-      thumbnailUrl = `/uploads/thumbnails/${presentationId}/${thumbFileName}`;
+      thumbnailUrl = probeResult.thumbnail ? `/uploads/thumbnails/${presentationId}/${thumbFileName}` : null;
 
       await query(
         `UPDATE presentations
@@ -177,6 +182,24 @@ router.post('/upload', upload.single('presentation'), async (req, res) => {
     });
   } catch (err) {
     console.error('Error processing presentation upload:', err);
+
+    // Clean up partial DB records on error
+    if (presentationId) {
+      try {
+        await query(`DELETE FROM slides WHERE presentation_id = $1`, [presentationId]);
+        await query(`DELETE FROM presentations WHERE id = $1`, [presentationId]);
+      } catch (cleanErr) {
+        console.error('Failed to cleanup aborted presentation:', cleanErr);
+      }
+    }
+
+    // Clean up failed file
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {}
+    }
+
     res.status(500).json({ error: `Failed to process upload: ${err.message}` });
   }
 });

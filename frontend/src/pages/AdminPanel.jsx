@@ -88,6 +88,9 @@ export default function AdminPanel() {
           const active = data.presentations.find((p) => p.is_active);
           const target = active || data.presentations[0];
           loadPresentationDetails(target.id);
+        } else {
+          setSelectedPresentation(null);
+          setSelectedSlides([]);
         }
       }
     } catch (err) {
@@ -159,15 +162,27 @@ export default function AdminPanel() {
     };
   }, []);
 
-  // Handle Multi-Format Upload (PDF, PPTX, MP4)
+  // Handle Multi-Format Upload (PDF, PPTX, MP4, MOV, WebM)
   const handleFileUpload = async (file) => {
     if (!file) return;
 
     const ext = file.name.split('.').pop().toLowerCase();
-    if (!['pdf', 'pptx', 'mp4'].includes(ext)) {
+    const allowed = ['pdf', 'pptx', 'mp4', 'mov', 'webm', 'm4v'];
+    if (!allowed.includes(ext)) {
       setUploadFeedback({
         type: 'error',
-        message: 'Unsupported format. Please select a PDF, PPTX, or MP4 file.'
+        message: `Unsupported file format (.${ext}). Supported formats are PDF, PPTX, MP4, MOV, and WebM.`
+      });
+      return;
+    }
+
+    // Cloud hosting request body limit protection (Render / Cloudflare 100MB limit)
+    const MAX_CLOUD_SIZE_MB = 100;
+    if (file.size > MAX_CLOUD_SIZE_MB * 1024 * 1024) {
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      setUploadFeedback({
+        type: 'error',
+        message: `File size (${fileSizeMB} MB) exceeds the 100 MB cloud transfer limit. In Canva, export as "PDF Standard" (usually <10 MB) or choose 1080p MP4 to ensure instant 4K upload!`
       });
       return;
     }
@@ -175,7 +190,7 @@ export default function AdminPanel() {
     setIsUploading(true);
     setUploadFeedback({
       type: 'loading',
-      message: `Ingesting ${ext.toUpperCase()} export and processing media pipeline...`
+      message: `Uploading & processing ${ext.toUpperCase()} media...`
     });
 
     const formData = new FormData();
@@ -194,7 +209,7 @@ export default function AdminPanel() {
       const pres = data.presentation;
       const detailMsg =
         pres.media_type === 'video'
-          ? `Detected ${pres.duration}s MP4 Video.`
+          ? `Detected ${pres.duration}s ${pres.original_format} Video.`
           : `Detected ${pres.page_count} dynamic slides.`;
 
       setUploadFeedback({
@@ -205,9 +220,13 @@ export default function AdminPanel() {
       await loadPresentations();
       await loadPresentationDetails(pres.id);
     } catch (err) {
+      let msg = err.message || 'Upload failed';
+      if (msg.includes('Failed to fetch')) {
+        msg = 'Connection reset during upload. The cloud server may have been restarting or the video took too long to transfer. Please retry now, or export from Canva as "PDF Standard" for instant 1-second processing!';
+      }
       setUploadFeedback({
         type: 'error',
-        message: `❌ Upload error: ${err.message}`
+        message: `❌ Upload error: ${msg}`
       });
     } finally {
       setIsUploading(false);
@@ -498,7 +517,7 @@ export default function AdminPanel() {
             type="file"
             ref={fileInputRef}
             style={{ display: 'none' }}
-            accept=".pdf,.pptx,.mp4"
+            accept=".pdf,.pptx,.mp4,.mov,.webm,.m4v"
             onChange={(e) => {
               if (e.target.files && e.target.files[0]) {
                 handleFileUpload(e.target.files[0]);
@@ -514,7 +533,7 @@ export default function AdminPanel() {
             <span className="format-tag" style={{ background: 'rgba(197, 168, 128, 0.2)', borderColor: 'var(--accent-gold)', color: 'var(--accent-gold)' }}>
               ⭐ PDF Presentation (Instant 1s Processing)
             </span>
-            <span className="format-tag">MP4 Video</span>
+            <span className="format-tag">MP4 / MOV Video</span>
             <span className="format-tag">PowerPoint (PPTX)</span>
           </div>
         </div>
@@ -582,9 +601,12 @@ export default function AdminPanel() {
                     <span className="slide-number-badge">Slide {slide.slide_index}</span>
                     <img
                       src={assetUrl(slide.image_path)}
-                      alt={`Slide ${slide.slide_index}`}
+                      alt=""
                       className="slide-thumbnail-img"
                       loading="lazy"
+                      onError={(e) => {
+                        e.target.style.opacity = '0';
+                      }}
                     />
                   </div>
                 ))}

@@ -31,28 +31,38 @@ def probe_video(video_path, thumbnail_output_path):
 
         width = int(video_stream.get("width", 1920))
         height = int(video_stream.get("height", 1080))
-        duration = float(data.get("format", {}).get("duration", video_stream.get("duration", 0)))
+        try:
+            raw_dur = data.get("format", {}).get("duration") or video_stream.get("duration")
+            duration = float(raw_dur) if raw_dur is not None else 10.0
+        except Exception:
+            duration = 10.0
 
         # 2. Run ffmpeg to extract poster frame thumbnail
         # Pick thumbnail at 1s or half duration if shorter
         thumb_time = min(1.0, max(0.1, duration / 2.0))
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-y",
-            "-ss", str(thumb_time),
-            "-i", abs_video,
-            "-vframes", "1",
-            "-q:v", "2",
-            abs_thumb
-        ]
-        subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        thumbnail_filename = None
+        try:
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss", str(thumb_time),
+                "-i", abs_video,
+                "-vframes", "1",
+                "-q:v", "2",
+                abs_thumb
+            ]
+            subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=30)
+            thumbnail_filename = os.path.basename(abs_thumb)
+        except Exception as fe:
+            # Non-fatal if poster frame generation fails
+            pass
 
         return {
             "success": True,
             "width": width,
             "height": height,
             "duration": round(duration, 2),
-            "thumbnail": os.path.basename(abs_thumb)
+            "thumbnail": thumbnail_filename or ""
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
