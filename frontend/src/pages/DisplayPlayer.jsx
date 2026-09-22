@@ -144,14 +144,23 @@ export default function DisplayPlayer() {
         slidesRef.current.length === 0
       ) {
         slidesHashRef.current = newHash;
-        const hydrated = await hydrateSlidesWithBlobs(payload.slides);
-        setSlides(hydrated);
+
+        // 1. Immediately render slides using live cloud URLs - instant display with ZERO blocking!
+        setSlides(payload.slides);
 
         // Only reset slide index to 0 when it is genuinely a new presentation or newly published
         if (isNewPublish || isNewPres || isMediaTypeChanged || slidesRef.current.length === 0) {
           setCurrentSlideIndex(0);
           setProgress(0);
         }
+
+        // 2. Hydrate blobs asynchronously in background for offline fallback if device supports it
+        hydrateSlidesWithBlobs(payload.slides).then((hydrated) => {
+          if (hydrated && Array.isArray(hydrated) && hydrated.length > 0) {
+            setSlides(hydrated);
+          }
+        }).catch(() => {});
+
         try {
           localStorage.setItem('lph_cached_slides', JSON.stringify(payload.slides));
           await saveSignageMeta('cached_slides', payload.slides);
@@ -407,12 +416,16 @@ export default function DisplayPlayer() {
                 src={slide.blobUrl || assetUrl(slide.image_path)}
                 alt=""
                 className={`slide-layer ${idx === currentSlideIndex ? 'active' : ''}`}
+                loading={idx <= 1 ? 'eager' : 'lazy'}
                 onError={(e) => {
                   if (slide.blobUrl && e.target.src !== slide.blobUrl) {
                     e.target.src = slide.blobUrl;
-                  } else {
-                    // Suppress broken image icon completely
-                    e.target.style.display = 'none';
+                  } else if (!e.target.dataset.retried) {
+                    e.target.dataset.retried = '1';
+                    setTimeout(() => {
+                      const sep = slide.image_path.includes('?') ? '&' : '?';
+                      e.target.src = assetUrl(slide.image_path) + sep + '_retry=' + Date.now();
+                    }, 1500);
                   }
                 }}
               />

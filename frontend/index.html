@@ -12,27 +12,43 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Self-healing display startup: purge any dead Cloudflare tunnels or stale cache immediately
+      (function() {
+        try {
+          if (window.location.search && window.location.search.indexOf('trycloudflare.com') !== -1) {
+            window.location.replace(window.location.origin + window.location.pathname);
+            return;
+          }
+          var key = 'lph_backend_api_url';
+          var saved = localStorage.getItem(key);
+          if (saved && (saved.indexOf('trycloudflare.com') !== -1 || saved.indexOf('localhost') !== -1)) {
+            localStorage.removeItem(key);
+            localStorage.removeItem('lph_cached_state');
+            localStorage.removeItem('lph_cached_slides');
+          }
+        } catch (e) {}
+
+        // Unregister obsolete service workers to prevent kiosk browser caching freezes
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for (var i = 0; i < regs.length; i++) {
+              regs[i].unregister();
+            }
+          }).catch(function() {});
+          if (window.caches) {
+            caches.keys().then(function(names) {
+              for (var i = 0; i < names.length; i++) {
+                caches.delete(names[i]);
+              }
+            }).catch(function() {});
+          }
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').then((reg) => {
-            // Check for service worker updates every 30 seconds
-            setInterval(() => {
-              reg.update().catch(() => {});
-            }, 30000);
-          }).catch(err => {
-            console.log('Service Worker registration skipped or failed:', err);
-          });
-        });
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          // When service worker updates, cleanly reload page to activate new app version
-          window.location.reload();
-        });
-      }
-    </script>
   </body>
 </html>

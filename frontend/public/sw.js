@@ -1,21 +1,13 @@
-// Service Worker for LPH Sales Display
-// Provides 100% offline slide and video playback if Wi-Fi drops on the commercial display
-
-const CACHE_NAME = 'lph-sales-display-v5';
-
+// Self-deactivating service worker to ensure all commercial displays run 100% fresh from cloud
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys.map((k) => {
-          if (k !== CACHE_NAME) return caches.delete(k);
-        })
-      )
-    ).then(() => clients.claim())
+    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .then(() => self.registration.unregister())
+      .then(() => self.clients.claim())
   );
 });
 
