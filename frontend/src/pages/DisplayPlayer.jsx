@@ -27,16 +27,42 @@ export default function DisplayPlayer() {
   const [rotationInterval, setRotationInterval] = useState(10);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [progress, setProgress] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(
+    () => Boolean(typeof document !== 'undefined' && (document.fullscreenElement || document.webkitFullscreenElement))
+  );
 
-  const timerRef = useRef(null);
-  const progressTimerRef = useRef(null);
   const isPausedRef = useRef(isPaused);
   isPausedRef.current = isPaused;
 
   const slidesRef = useRef(slides);
   slidesRef.current = slides;
 
+  const lastPublishedAtRef = useRef(displayState?.last_published_at || null);
+  const activePresIdRef = useRef(displayState?.active_presentation_id || null);
+  const mediaTypeRef = useRef(displayState?.media_type || 'presentation');
+  const mediaUrlRef = useRef(displayState?.media_url || null);
+  const slidesHashRef = useRef('');
+
   const videoRef = useRef(null);
+
+  // Track fullscreen changes across all browsers
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement || document.webkitFullscreenElement));
+    };
+
+    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
+    document.addEventListener('mozfullscreenchange', handleFsChange);
+    document.addEventListener('MSFullscreenChange', handleFsChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
+      document.removeEventListener('mozfullscreenchange', handleFsChange);
+      document.removeEventListener('MSFullscreenChange', handleFsChange);
+    };
+  }, []);
 
   // Hydrate slide list with offline IndexedDB Blobs
   const hydrateSlidesWithBlobs = async (slideList) => {
@@ -68,33 +94,56 @@ export default function DisplayPlayer() {
   const handleDisplayPayload = async (payload) => {
     if (!payload) return;
 
-    if (payload.state) {
-      setDisplayState(payload.state);
-      setIsPaused(Boolean(payload.state.is_paused));
-      if (payload.state.rotation_interval) {
-        setRotationInterval(payload.state.rotation_interval);
+    const newState = payload.state;
+    if (newState) {
+      setDisplayState(newState);
+      setIsPaused(Boolean(newState.is_paused));
+      if (newState.rotation_interval) {
+        setRotationInterval(newState.rotation_interval);
       }
       try {
-        localStorage.setItem('lph_cached_state', JSON.stringify(payload.state));
-        await saveSignageMeta('cached_state', payload.state);
+        localStorage.setItem('lph_cached_state', JSON.stringify(newState));
+        await saveSignageMeta('cached_state', newState);
       } catch (e) {
         console.error(e);
       }
     }
 
-    if (payload.state?.media_type === 'video') {
+    const isVideo = newState?.media_type === 'video';
+    const isNewPublish = newState?.last_published_at && newState.last_published_at !== lastPublishedAtRef.current;
+    const isNewPres = newState?.active_presentation_id && newState.active_presentation_id !== activePresIdRef.current;
+    const isMediaTypeChanged = newState?.media_type && newState.media_type !== mediaTypeRef.current;
+    const isMediaUrlChanged = isVideo && newState?.media_url !== mediaUrlRef.current;
+
+    // Save tracking refs
+    if (newState?.last_published_at) lastPublishedAtRef.current = newState.last_published_at;
+    if (newState?.active_presentation_id) activePresIdRef.current = newState.active_presentation_id;
+    if (newState?.media_type) mediaTypeRef.current = newState.media_type;
+    if (newState?.media_url) mediaUrlRef.current = newState.media_url;
+
+    if (isVideo) {
       setSlides([]);
+      slidesHashRef.current = '';
       if (videoRef.current) {
-        if (payload.state.is_paused) {
+        if (newState?.is_paused) {
           videoRef.current.pause();
         } else {
           videoRef.current.play().catch(() => {});
         }
       }
     } else if (payload.slides && Array.isArray(payload.slides) && payload.slides.length > 0) {
-      const newIds = payload.slides.map((s) => s.id).join(',');
-      const oldIds = slidesRef.current.map((s) => s.id).join(',');
-      if (newIds !== oldIds || slidesRef.current.some((s) => !s.blobUrl)) {
+      const newHash = payload.slides.map((s) => `${s.id}_${s.image_path}`).join('|');
+      const isSlidesChanged = newHash !== slidesHashRef.current;
+
+      // Update slides if newly published, new presentation, media type switched, slides changed, or blobs missing
+      if (
+        isNewPublish ||
+        isNewPres ||
+        isMediaTypeChanged ||
+        isSlidesChanged ||
+        slidesRef.current.some((s) => !s.blobUrl)
+      ) {
+        slidesHashRef.current = newHash;
         const hydrated = await hydrateSlidesWithBlobs(payload.slides);
         setSlides(hydrated);
         setCurrentSlideIndex(0);
@@ -108,7 +157,7 @@ export default function DisplayPlayer() {
       }
     }
 
-    setConnectionStatus(payload.state?.is_paused ? 'paused' : 'live');
+    setConnectionStatus(newState?.is_paused ? 'paused' : 'live');
   };
 
   // Initial fetch on mount + offline IndexedDB hydration
@@ -122,8 +171,11 @@ export default function DisplayPlayer() {
       }
     })();
 
-    // 2. Fetch live state from API
-    fetch(apiUrl('/api/display/current'))
+    // 2. Fetch live state from API with cache-busting
+    fetch(`${apiUrl('/api/display/current')}?_t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+    })
       .then((res) => {
         if (!res.ok) throw new Error('Network error');
         return res.json();
@@ -139,16 +191,19 @@ export default function DisplayPlayer() {
       });
   }, []);
 
-  // Continuous background synchronization (every 2.5s)
+  // Continuous background synchronization (every 2.5s) with cache busting
   useEffect(() => {
     const syncInterval = setInterval(() => {
-      fetch(apiUrl('/api/display/current'))
+      fetch(`${apiUrl('/api/display/current')}?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+      })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data) handleDisplayPayload(data);
         })
         .catch(() => {
-          setConnectionStatus('offline');
+          // Keep running cached slides uninterrupted
         });
     }, 2500);
 
@@ -223,22 +278,22 @@ export default function DisplayPlayer() {
   }, [isPaused, displayState?.media_type]);
 
   // Slide auto-rotation timer (for presentation mode)
-  // Even if offline, continues rotating through cached slides endlessly
+  // Continuous smooth looping: will NEVER freeze, regardless of network or status changes
   useEffect(() => {
-    const shouldPause = isPaused && connectionStatus !== 'offline';
-    if (displayState?.media_type === 'video' || shouldPause || slides.length <= 1) {
+    if (displayState?.media_type === 'video' || isPaused || slides.length <= 1) {
       setProgress(0);
       return;
     }
 
-    const intervalMs = (rotationInterval || 10) * 1000;
+    const intervalMs = Math.max(2, (rotationInterval || 10)) * 1000;
     const tickMs = 100;
-    let elapsed = 0;
+    let startTime = Date.now();
 
     const timer = setInterval(() => {
-      elapsed += tickMs;
+      const now = Date.now();
+      const elapsed = now - startTime;
       if (elapsed >= intervalMs) {
-        elapsed = 0;
+        startTime = Date.now();
         setCurrentSlideIndex((prev) => (prev + 1) % slides.length);
         setProgress(0);
       } else {
@@ -247,14 +302,23 @@ export default function DisplayPlayer() {
     }, tickMs);
 
     return () => clearInterval(timer);
-  }, [slides.length, rotationInterval, isPaused, connectionStatus, displayState?.media_type, currentSlideIndex]);
+  }, [slides.length, rotationInterval, isPaused, displayState?.media_type]);
 
-  // Fullscreen toggle (F) and Manual Slide navigation (Arrow keys / Space)
+  // Fullscreen toggle (F or double-click) and Manual Slide navigation (Arrow keys)
   const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen().catch(() => {});
+      } else if (elem.webkitRequestFullscreen) {
+        elem.webkitRequestFullscreen();
+      }
     } else {
-      document.exitFullscreen().catch(() => {});
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      }
     }
   };
 
@@ -282,7 +346,10 @@ export default function DisplayPlayer() {
   const hasContent = isVideo ? Boolean(displayState?.media_url) : slides.length > 0;
 
   return (
-    <div className="display-viewport" onDoubleClick={toggleFullscreen}>
+    <div
+      className={`display-viewport ${isFullscreen ? 'is-fullscreen' : ''}`}
+      onDoubleClick={toggleFullscreen}
+    >
       <div className="display-stage">
         {!hasContent ? (
           <div className="display-empty-state">
@@ -327,35 +394,37 @@ export default function DisplayPlayer() {
           </>
         )}
 
-        {/* Live Signage Status Badge */}
-        <div className="signage-badge">
-          <div
-            className={`status-dot ${
-              connectionStatus === 'paused'
-                ? 'paused'
+        {/* Live Signage Status Badge - completely hidden when in fullscreen mode */}
+        {!isFullscreen && (
+          <div className="signage-badge">
+            <div
+              className={`status-dot ${
+                connectionStatus === 'paused'
+                  ? 'paused'
+                  : connectionStatus === 'offline'
+                  ? 'offline'
+                  : ''
+              }`}
+            />
+            <span>
+              {connectionStatus === 'paused'
+                ? 'PAUSED'
                 : connectionStatus === 'offline'
-                ? 'offline'
-                : ''
-            }`}
-          />
-          <span>
-            {connectionStatus === 'paused'
-              ? 'PAUSED'
-              : connectionStatus === 'offline'
-              ? 'OFFLINE (PLAYING CACHE)'
-              : 'LIVE DISPLAY'}
-          </span>
-          <span className="badge-divider" />
-          <span className="slide-counter">
-            {isVideo
-              ? 'VIDEO LOOP'
-              : slides.length > 0
-              ? `${currentSlideIndex + 1} / ${slides.length}`
-              : '0 / 0'}
-          </span>
-          <span className="badge-divider" />
-          <span>LG 98"</span>
-        </div>
+                ? 'OFFLINE (PLAYING CACHE)'
+                : 'LIVE DISPLAY'}
+            </span>
+            <span className="badge-divider" />
+            <span className="slide-counter">
+              {isVideo
+                ? 'VIDEO LOOP'
+                : slides.length > 0
+                ? `${currentSlideIndex + 1} / ${slides.length}`
+                : '0 / 0'}
+            </span>
+            <span className="badge-divider" />
+            <span>LG 98"</span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -77,6 +77,18 @@
   transition: opacity 0.3s ease;
 }
 
+/* Hide live badge completely in fullscreen mode */
+:fullscreen .signage-badge,
+:-webkit-full-screen .signage-badge,
+:-moz-full-screen .signage-badge,
+:-ms-fullscreen .signage-badge,
+.display-viewport.is-fullscreen .signage-badge,
+.is-fullscreen .signage-badge {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;

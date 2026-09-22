@@ -61,6 +61,9 @@ export async function getCurrentDisplayPayload() {
  * Returns current display presentation and pause status
  */
 router.get('/current', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   try {
     const payload = await getCurrentDisplayPayload();
     res.json(payload);
