@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://licence-locked-lifestyle-roll.trycloudflare.com/api/:path*"
+      "destination": "https://ministry-founded-refinance-construction.trycloudflare.com/api/:path*"
     },
     {
       "source": "/uploads/:path*",
-      "destination": "https://licence-locked-lifestyle-roll.trycloudflare.com/uploads/:path*"
+      "destination": "https://ministry-founded-refinance-construction.trycloudflare.com/uploads/:path*"
     },
     {
       "source": "/(.*)",

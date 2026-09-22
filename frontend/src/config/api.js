@@ -24,7 +24,7 @@ export function getApiBaseUrl() {
 
   // 4. Default tunnel URL fallback if on Vercel preview/production
   if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-    return 'https://licence-locked-lifestyle-roll.trycloudflare.com';
+    return 'https://ministry-founded-refinance-construction.trycloudflare.com';
   }
 
   // 5. Local development fallback (uses relative path proxied by Vite)
