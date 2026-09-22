@@ -19,9 +19,9 @@ const router = express.Router();
  * GET /api/canva/auth/start
  * Initiates Canva OAuth 2.0 PKCE Authorization
  */
-router.get('/auth/start', (req, res) => {
+router.get('/auth/start', async (req, res) => {
   try {
-    const { redirect_uri } = req.query;
+    const { redirect_uri, client_id } = req.query;
     const isLive = req.get('host')?.includes('onrender.com') || process.env.NODE_ENV === 'production';
     const defaultRedirect = isLive
       ? 'https://canvaaa-p0f3.onrender.com/api/canva/callback'
@@ -35,7 +35,7 @@ router.get('/auth/start', (req, res) => {
         targetRedirect = process.env.CANVA_REDIRECT_URI || defaultRedirect;
       }
     }
-    const { auth_url, state, redirect_uri: finalUri } = generateCanvaAuthUrl(targetRedirect);
+    const { auth_url, state, redirect_uri: finalUri } = await generateCanvaAuthUrl(targetRedirect, client_id);
     res.json({
       success: true,
       auth_url,
@@ -130,13 +130,15 @@ router.get('/status', async (req, res) => {
  * Saves credentials/token and tests connectivity
  */
 router.post('/connect', async (req, res) => {
-  const { design_id, access_token, design_title } = req.body;
+  const { design_id, access_token, design_title, client_id, client_secret } = req.body;
 
   try {
     const fieldsToUpdate = {};
+    if (client_id !== undefined) fieldsToUpdate.client_id = client_id.trim();
+    if (client_secret !== undefined && client_secret !== '••••••••••••••••') fieldsToUpdate.client_secret = client_secret.trim();
     if (design_id) fieldsToUpdate.design_id = design_id.trim();
     if (design_title) fieldsToUpdate.design_title = design_title.trim();
-    if (access_token !== undefined) fieldsToUpdate.access_token = access_token.trim();
+    if (access_token !== undefined && access_token !== '••••••••••••••••') fieldsToUpdate.access_token = access_token.trim();
 
     await updateCanvaConnection(fieldsToUpdate);
 

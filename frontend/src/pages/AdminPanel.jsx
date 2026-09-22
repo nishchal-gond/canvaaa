@@ -48,6 +48,8 @@ export default function AdminPanel() {
   const [showCanvaConfig, setShowCanvaConfig] = useState(false);
   const [showVersionsDrawer, setShowVersionsDrawer] = useState(false);
   const [canvaConfigForm, setCanvaConfigForm] = useState({
+    client_id: 'OC-AAdIyAng356N',
+    client_secret: '',
     design_id: 'DAHVb9pmJzQ',
     design_title: 'Copy of Dashboard Screen 16/9',
     access_token: '',
@@ -159,6 +161,8 @@ export default function AdminPanel() {
         if (data.connection) {
           setCanvaConfigForm((prev) => ({
             ...prev,
+            client_id: data.connection.client_id || prev.client_id || 'OC-AAdIyAng356N',
+            client_secret: data.connection.client_secret_masked || prev.client_secret || '',
             design_id: data.connection.design_id || 'DAHVb9pmJzQ',
             design_title: data.connection.design_title || 'Copy of Dashboard Screen 16/9'
           }));
@@ -339,7 +343,15 @@ export default function AdminPanel() {
       const redirectParam = isCloud
         ? encodeURIComponent('https://canvaaa-p0f3.onrender.com/api/canva/callback')
         : '';
-      const endpoint = `/api/canva/auth/start${redirectParam ? `?redirect_uri=${redirectParam}` : ''}`;
+      const clientIdParam = canvaConfigForm.client_id
+        ? encodeURIComponent(canvaConfigForm.client_id.trim())
+        : '';
+
+      const queryParts = [];
+      if (redirectParam) queryParts.push(`redirect_uri=${redirectParam}`);
+      if (clientIdParam) queryParts.push(`client_id=${clientIdParam}`);
+
+      const endpoint = `/api/canva/auth/start${queryParts.length > 0 ? `?${queryParts.join('&')}` : ''}`;
       const res = await fetch(apiUrl(endpoint));
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to initialize Canva authorization');
@@ -826,6 +838,60 @@ export default function AdminPanel() {
               </button>
             </div>
             <div className="canva-config-grid">
+              {/* Canva Developer Portal Redirect URL Banner */}
+              <div style={{
+                gridColumn: '1 / -1',
+                background: 'rgba(125, 42, 232, 0.1)',
+                border: '1px solid rgba(125, 42, 232, 0.35)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                marginBottom: '6px'
+              }}>
+                <div style={{ fontWeight: '600', color: '#c084fc', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                  <Sparkles size={14} />
+                  <span>Redirect URL for Canva Developer Portal (Configuration tab):</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <code style={{ background: '#09090b', padding: '6px 10px', borderRadius: '5px', flex: 1, color: '#4ade80', fontSize: '12px', border: '1px solid rgba(255,255,255,0.1)', wordBreak: 'break-all' }}>
+                    https://canvaaa-p0f3.onrender.com/api/canva/callback
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText('https://canvaaa-p0f3.onrender.com/api/canva/callback');
+                      setCanvaFeedback({ type: 'success', message: '📋 Copied Canva Redirect URL to clipboard!' });
+                    }}
+                    style={{ background: '#7d2ae8', color: '#fff', border: 'none', borderRadius: '5px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: '700', whiteSpace: 'nowrap' }}
+                  >
+                    Copy URL
+                  </button>
+                </div>
+              </div>
+
+              <div className="config-field">
+                <label>Canva Client ID (from your Canva App)</label>
+                <input
+                  type="text"
+                  value={canvaConfigForm.client_id}
+                  onChange={(e) =>
+                    setCanvaConfigForm({ ...canvaConfigForm, client_id: e.target.value })
+                  }
+                  placeholder="e.g. OC-AAdIyAng356N"
+                />
+              </div>
+
+              <div className="config-field">
+                <label>Canva Client Secret (from your Canva App)</label>
+                <input
+                  type="password"
+                  value={canvaConfigForm.client_secret}
+                  onChange={(e) =>
+                    setCanvaConfigForm({ ...canvaConfigForm, client_secret: e.target.value })
+                  }
+                  placeholder="Paste Canva Client Secret"
+                />
+              </div>
+
               <div className="config-field">
                 <label>Canva Design ID</label>
                 <input

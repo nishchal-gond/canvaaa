@@ -22,8 +22,12 @@ const pkceSessions = new Map();
 /**
  * Generates Canva OAuth 2.0 PKCE Authorization URL
  */
-export function generateCanvaAuthUrl(redirectUri) {
-  const clientId = process.env.CANVA_CLIENT_ID || 'OC-AAdIyAng356N';
+export async function generateCanvaAuthUrl(redirectUri, customClientId = null) {
+  let clientId = customClientId;
+  if (!clientId) {
+    const credsRes = await query('SELECT client_id FROM canva_connections WHERE id = 1');
+    clientId = credsRes.rows[0]?.client_id || process.env.CANVA_CLIENT_ID || 'OC-AAdIyAng356N';
+  }
   const verifier = crypto.randomBytes(32).toString('base64url');
   const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
   const state = crypto.randomBytes(16).toString('hex');
@@ -36,6 +40,7 @@ export function generateCanvaAuthUrl(redirectUri) {
   pkceSessions.set(state, {
     verifier,
     redirectUri: finalRedirectUri,
+    clientId,
     createdAt: Date.now()
   });
 
@@ -52,7 +57,8 @@ export function generateCanvaAuthUrl(redirectUri) {
   return {
     auth_url: `https://www.canva.com/api/oauth/authorize?${params.toString()}`,
     state,
-    redirect_uri: finalRedirectUri
+    redirect_uri: finalRedirectUri,
+    client_id: clientId
   };
 }
 
@@ -62,10 +68,12 @@ export function generateCanvaAuthUrl(redirectUri) {
 export async function exchangeCanvaAuthCode({ code, state, redirectUri }) {
   const session = pkceSessions.get(state);
   const verifier = session?.verifier;
-  const clientId = process.env.CANVA_CLIENT_ID || 'OC-AAdIyAng356N';
-  const clientSecret =
-    process.env.CANVA_CLIENT_SECRET ||
-    'cnvcaHhkYCKMOpnh-fY_WMWvTz6Rcf9vlQWyuWwfTYTECRD84';
+
+  const credsRes = await query('SELECT client_id, client_secret FROM canva_connections WHERE id = 1');
+  const dbRow = credsRes.rows[0];
+  const clientId = session?.clientId || dbRow?.client_id || process.env.CANVA_CLIENT_ID || 'OC-AAdIyAng356N';
+  const clientSecret = dbRow?.client_secret || process.env.CANVA_CLIENT_SECRET || 'cnvcaHhkYCKMOpnh-fY_WMWvTz6Rcf9vlQWyuWwfTYTECRD84';
+
   const finalRedirectUri =
     session?.redirectUri ||
     redirectUri ||
@@ -170,10 +178,15 @@ export async function getCanvaConnection() {
     poll_interval_seconds: 60
   };
 
-  // Mask access token for safety
+  // Mask access token and secret for safety
+  const clientId = conn.client_id || process.env.CANVA_CLIENT_ID || 'OC-AAdIyAng356N';
+  const hasSecret = Boolean(conn.client_secret || process.env.CANVA_CLIENT_SECRET);
   const hasToken = Boolean(conn.access_token || process.env.CANVA_ACCESS_TOKEN || process.env.CANVA_API_KEY);
   return {
     ...conn,
+    client_id: clientId,
+    has_client_secret: hasSecret,
+    client_secret_masked: hasSecret ? '••••••••••••••••' : null,
     has_token: hasToken,
     access_token_masked: hasToken ? '••••••••••••••••' : null
   };
@@ -184,6 +197,8 @@ export async function getCanvaConnection() {
  */
 export async function updateCanvaConnection(fields) {
   const allowed = [
+    'client_id',
+    'client_secret',
     'design_id',
     'design_title',
     'access_token',
