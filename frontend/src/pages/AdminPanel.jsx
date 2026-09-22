@@ -13,7 +13,9 @@ import {
   Video,
   FileText,
   Radio,
-  Settings
+  Settings,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import './AdminPanel.css';
 import { apiUrl, assetUrl, getApiBaseUrl, setApiBaseUrl } from '../config/api';
@@ -32,6 +34,30 @@ export default function AdminPanel() {
   const [customUrlInput, setCustomUrlInput] = useState(getApiBaseUrl());
 
   const fileInputRef = useRef(null);
+  const [scrollY, setScrollY] = useState(0);
+
+  // Track window scroll position to toggle floating scroll button
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrollY(window.scrollY || document.documentElement.scrollTop);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToBottom = () => {
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: 'smooth'
+    });
+  };
+
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
 
   // Fetch display state
   const loadDisplayState = async () => {
@@ -301,6 +327,17 @@ export default function AdminPanel() {
             <Settings size={14} style={{ opacity: 0.7 }} />
           </button>
 
+          <button
+            type="button"
+            className="display-link-btn"
+            style={{ cursor: 'pointer' }}
+            onClick={scrollToBottom}
+            title="Scroll down to Uploads & Presentation Previews"
+          >
+            <ChevronDown size={18} />
+            <span>Scroll to Uploads & Slides</span>
+          </button>
+
           <a href="/display" target="_blank" rel="noreferrer" className="display-link-btn">
             <Tv size={18} />
             <span>Open LG Display Player</span>
@@ -551,6 +588,26 @@ export default function AdminPanel() {
           </div>
         </div>
       )}
+
+      {/* Floating Quick Scroll Button */}
+      <button
+        type="button"
+        className="floating-scroll-btn"
+        onClick={scrollY > 200 ? scrollToTop : scrollToBottom}
+        title={scrollY > 200 ? 'Scroll to Top' : 'Scroll down to Upload & Slides'}
+      >
+        {scrollY > 200 ? (
+          <>
+            <ChevronUp size={18} />
+            <span>SCROLL TO TOP</span>
+          </>
+        ) : (
+          <>
+            <ChevronDown size={18} />
+            <span>SCROLL TO CONTENT</span>
+          </>
+        )}
+      </button>
     </div>
   );
 }
