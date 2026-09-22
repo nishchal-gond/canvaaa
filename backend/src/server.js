@@ -34,6 +34,21 @@ app.use('/api/display', displayRouter);
 
 import { runMigrations } from './db/migrate.js';
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    service: 'LPH Sales Display Commercial Backend',
+    status: 'online',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      display: '/api/display/current',
+      stream: '/api/display/stream',
+      presentations: '/api/presentations'
+    }
+  });
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({

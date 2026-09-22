@@ -22,9 +22,9 @@ export function getApiBaseUrl() {
     return import.meta.env.VITE_API_BASE_URL.trim().replace(/\/$/, '');
   }
 
-  // 4. Default tunnel URL fallback if on Vercel preview/production
+  // 4. Default live cloud backend fallback if on Vercel preview/production
   if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-    return 'https://ministry-founded-refinance-construction.trycloudflare.com';
+    return 'https://canvaaa-p0f3.onrender.com';
   }
 
   // 5. Local development fallback (uses relative path proxied by Vite)
