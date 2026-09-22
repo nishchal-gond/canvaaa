@@ -27,7 +27,14 @@ router.get('/auth/start', (req, res) => {
       ? 'https://canvaaa-p0f3.onrender.com/api/canva/callback'
       : `${req.protocol}://${req.get('host')}/api/canva/callback`;
 
-    const targetRedirect = redirect_uri || process.env.CANVA_REDIRECT_URI || defaultRedirect;
+    let targetRedirect = redirect_uri;
+    if (!targetRedirect) {
+      if (isLive) {
+        targetRedirect = 'https://canvaaa-p0f3.onrender.com/api/canva/callback';
+      } else {
+        targetRedirect = process.env.CANVA_REDIRECT_URI || defaultRedirect;
+      }
+    }
     const { auth_url, state, redirect_uri: finalUri } = generateCanvaAuthUrl(targetRedirect);
     res.json({
       success: true,

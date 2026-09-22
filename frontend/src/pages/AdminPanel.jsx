@@ -335,7 +335,12 @@ export default function AdminPanel() {
         type: 'loading',
         message: 'Connecting to Canva OAuth 2.0 authorization server...'
       });
-      const res = await fetch(apiUrl('/api/canva/auth/start'));
+      const isCloud = window.location.hostname.includes('vercel.app');
+      const redirectParam = isCloud
+        ? encodeURIComponent('https://canvaaa-p0f3.onrender.com/api/canva/callback')
+        : '';
+      const endpoint = `/api/canva/auth/start${redirectParam ? `?redirect_uri=${redirectParam}` : ''}`;
+      const res = await fetch(apiUrl(endpoint));
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to initialize Canva authorization');
       if (data.auth_url) {
