@@ -19,9 +19,18 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(err => {
+          navigator.serviceWorker.register('/sw.js').then((reg) => {
+            // Check for service worker updates every 30 seconds
+            setInterval(() => {
+              reg.update().catch(() => {});
+            }, 30000);
+          }).catch(err => {
             console.log('Service Worker registration skipped or failed:', err);
           });
+        });
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          // When service worker updates, cleanly reload page to activate new app version
+          window.location.reload();
         });
       }
     </script>

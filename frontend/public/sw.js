@@ -1,7 +1,7 @@
 // Service Worker for LPH Sales Display
 // Provides 100% offline slide and video playback if Wi-Fi drops on the commercial display
 
-const CACHE_NAME = 'lph-sales-display-v3';
+const CACHE_NAME = 'lph-sales-display-v5';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -22,8 +22,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 1. NEVER intercept video streams or HTTP Range requests
-  // Native browser video streaming requires 206 Partial Content which cannot be cached by standard Service Worker Cache API
+  // 1. NEVER intercept video streams, HTTP Range requests, or Server-Sent Events
   if (
     event.request.headers.get('range') ||
     event.request.destination === 'video' ||
@@ -35,26 +34,8 @@ self.addEventListener('fetch', (event) => {
     return; // Pass through to native browser network handler
   }
 
-  // 2. Network-first for API state with safe fallback
-  if (url.pathname.startsWith('/api/display/current')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(async () => {
-          const cached = await caches.match(event.request);
-          if (cached) return cached;
-          return new Response(JSON.stringify({ error: 'offline' }), {
-            status: 503,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        })
-    );
+  // 2. NEVER cache or intercept API routes or SSE stream - ALWAYS real-time from server
+  if (url.pathname.startsWith('/api/')) {
     return;
   }
 

@@ -135,19 +135,23 @@ export default function DisplayPlayer() {
       const newHash = payload.slides.map((s) => `${s.id}_${s.image_path}`).join('|');
       const isSlidesChanged = newHash !== slidesHashRef.current;
 
-      // Update slides if newly published, new presentation, media type switched, slides changed, or blobs missing
+      // Update slides ONLY when newly published, presentation ID changed, media type switched, slides changed, or initial load
       if (
         isNewPublish ||
         isNewPres ||
         isMediaTypeChanged ||
         isSlidesChanged ||
-        slidesRef.current.some((s) => !s.blobUrl)
+        slidesRef.current.length === 0
       ) {
         slidesHashRef.current = newHash;
         const hydrated = await hydrateSlidesWithBlobs(payload.slides);
         setSlides(hydrated);
-        setCurrentSlideIndex(0);
-        setProgress(0);
+
+        // Only reset slide index to 0 when it is genuinely a new presentation or newly published
+        if (isNewPublish || isNewPres || isMediaTypeChanged || slidesRef.current.length === 0) {
+          setCurrentSlideIndex(0);
+          setProgress(0);
+        }
         try {
           localStorage.setItem('lph_cached_slides', JSON.stringify(payload.slides));
           await saveSignageMeta('cached_slides', payload.slides);
