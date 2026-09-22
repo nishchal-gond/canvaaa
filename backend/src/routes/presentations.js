@@ -7,6 +7,8 @@ import { query } from '../config/db.js';
 import { renderPdfToSlides } from '../services/pdfRenderer.js';
 import { renderPptxToSlides } from '../services/pptxRenderer.js';
 import { processVideo } from '../services/videoProcessor.js';
+import { sseBroadcaster } from '../services/sseBroadcaster.js';
+import { getCurrentDisplayPayload } from './display.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,6 +57,53 @@ const upload = multer({
     }
   }
 });
+
+/**
+ * Purges all older presentations, slide folders, thumbnails, and media files.
+ * Keeps only the specified presentationId (or cleans all if null).
+ */
+export async function purgeOldPresentations(keepPresentationId = null) {
+  try {
+    let sql = 'SELECT id, filename, media_type FROM presentations';
+    const params = [];
+    if (keepPresentationId) {
+      sql += ' WHERE id != $1';
+      params.push(keepPresentationId);
+    }
+    const res = await query(sql, params);
+
+    for (const row of res.rows) {
+      // 1. Remove slide image directory
+      const slideDir = path.join(slidesBaseDir, row.id);
+      if (fs.existsSync(slideDir)) {
+        try { fs.rmSync(slideDir, { recursive: true, force: true }); } catch {}
+      }
+
+      // 2. Remove thumbnail directory
+      const thumbDir = path.join(thumbsBaseDir, row.id);
+      if (fs.existsSync(thumbDir)) {
+        try { fs.rmSync(thumbDir, { recursive: true, force: true }); } catch {}
+      }
+
+      // 3. Remove source document or video file
+      if (row.filename) {
+        const docPath = path.join(docsDir, row.filename);
+        if (fs.existsSync(docPath)) try { fs.unlinkSync(docPath); } catch {}
+        const videoPath = path.join(videosDir, row.filename);
+        if (fs.existsSync(videoPath)) try { fs.unlinkSync(videoPath); } catch {}
+      }
+
+      // 4. Remove database records
+      await query('DELETE FROM slides WHERE presentation_id = $1', [row.id]);
+      await query('DELETE FROM presentations WHERE id = $1', [row.id]);
+    }
+    if (res.rows.length > 0) {
+      console.log(`🧹 Auto-purged ${res.rows.length} old presentation(s) and their disk files.`);
+    }
+  } catch (err) {
+    console.error('Error during old presentations cleanup:', err);
+  }
+}
 
 /**
  * POST /api/presentations/upload
@@ -162,9 +211,31 @@ router.post('/upload', upload.single('presentation'), async (req, res) => {
       );
     }
 
+    // 1. Automatically purge all older presentations, slide folders, and media files
+    await purgeOldPresentations(presentationId);
+
+    // 2. Automatically activate and publish the new presentation to the live display
+    await query(`UPDATE presentations SET is_active = true WHERE id = $1`, [presentationId]);
+    await query(
+      `UPDATE display_state
+       SET active_presentation_id = $1,
+           last_published_at = NOW(),
+           updated_at = NOW()
+       WHERE id = 1`,
+      [presentationId]
+    );
+
+    // 3. Broadcast real-time event to all connected screens
+    try {
+      const payload = await getCurrentDisplayPayload();
+      sseBroadcaster.broadcast('PRESENTATION_PUBLISHED', payload);
+    } catch (sseErr) {
+      console.warn('SSE broadcast error:', sseErr.message);
+    }
+
     res.status(201).json({
       success: true,
-      message: `Successfully processed ${originalFormat} upload!`,
+      message: `Successfully processed & published ${originalFormat}! Previous presentations removed.`,
       presentation: {
         id: presentationId,
         title,
@@ -255,6 +326,65 @@ router.get('/:id', async (req, res) => {
     });
   } catch (err) {
     console.error('Error fetching presentation details:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/presentations/:id
+ * Explicitly delete a presentation and all associated slide/video files
+ */
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const check = await query('SELECT * FROM presentations WHERE id = $1', [id]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Presentation not found.' });
+    }
+    const row = check.rows[0];
+
+    // 1. Remove slide folder
+    const slideDir = path.join(slidesBaseDir, row.id);
+    if (fs.existsSync(slideDir)) {
+      try { fs.rmSync(slideDir, { recursive: true, force: true }); } catch {}
+    }
+
+    // 2. Remove thumbnail folder
+    const thumbDir = path.join(thumbsBaseDir, row.id);
+    if (fs.existsSync(thumbDir)) {
+      try { fs.rmSync(thumbDir, { recursive: true, force: true }); } catch {}
+    }
+
+    // 3. Remove source document or video
+    if (row.filename) {
+      const docPath = path.join(docsDir, row.filename);
+      if (fs.existsSync(docPath)) try { fs.unlinkSync(docPath); } catch {}
+      const videoPath = path.join(videosDir, row.filename);
+      if (fs.existsSync(videoPath)) try { fs.unlinkSync(videoPath); } catch {}
+    }
+
+    // 4. Remove database records
+    await query('DELETE FROM slides WHERE presentation_id = $1', [id]);
+    await query('DELETE FROM presentations WHERE id = $1', [id]);
+
+    // If active, clear display_state
+    await query(
+      `UPDATE display_state
+       SET active_presentation_id = NULL,
+           last_published_at = NOW(),
+           updated_at = NOW()
+       WHERE active_presentation_id = $1`,
+      [id]
+    );
+
+    try {
+      const payload = await getCurrentDisplayPayload();
+      sseBroadcaster.broadcast('PRESENTATION_PUBLISHED', payload);
+    } catch {}
+
+    res.json({ success: true, message: 'Presentation deleted successfully.' });
+  } catch (err) {
+    console.error('Error deleting presentation:', err);
     res.status(500).json({ error: err.message });
   }
 });
