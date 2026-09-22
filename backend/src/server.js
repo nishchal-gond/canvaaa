@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import presentationsRouter from './routes/presentations.js';
 import displayRouter from './routes/display.js';
 import canvaRouter from './routes/canva.js';
@@ -16,6 +17,19 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+
+// Restore permanent bundled slide assets if container restarted on Render
+const permSlidesDir = path.resolve(__dirname, '../permanent_slides');
+const targetSlidesDir = path.resolve(__dirname, '../uploads/slides');
+if (fs.existsSync(permSlidesDir)) {
+  try {
+    fs.mkdirSync(targetSlidesDir, { recursive: true });
+    fs.cpSync(permSlidesDir, targetSlidesDir, { recursive: true, force: true });
+    console.log('✅ Permanent cloud presentation slides restored to /uploads/slides');
+  } catch (err) {
+    console.warn('Permanent slides copy warning:', err.message);
+  }
+}
 
 // Enable CORS for frontend
 app.use(cors({
