@@ -32,6 +32,8 @@ app.use('/uploads', express.static(uploadsDir));
 app.use('/api/presentations', presentationsRouter);
 app.use('/api/display', displayRouter);
 
+import { runMigrations } from './db/migrate.js';
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({
@@ -41,13 +43,19 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
   console.log(`====================================================`);
   console.log(`  Sales Display Backend Server Running`);
   console.log(`  Port: http://localhost:${PORT}`);
   console.log(`  Display API: http://localhost:${PORT}/api/display/current`);
   console.log(`  SSE Stream:  http://localhost:${PORT}/api/display/stream`);
   console.log(`====================================================`);
+
+  try {
+    await runMigrations();
+  } catch (err) {
+    console.warn('Startup migration check warning:', err.message);
+  }
 });
 
 // Graceful shutdown

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: sales-display-backend
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    plan: free
+    region: oregon
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false

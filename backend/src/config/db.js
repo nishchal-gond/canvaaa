@@ -18,6 +18,7 @@ if (!connectionString) {
 
 export const pool = new Pool({
   connectionString,
+  ssl: connectionString && !connectionString.includes('localhost') ? { rejectUnauthorized: false } : false,
   max: 10,
   idleTimeoutMillis: 30000,
 });
