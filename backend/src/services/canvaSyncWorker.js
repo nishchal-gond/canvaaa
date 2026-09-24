@@ -16,6 +16,13 @@ let isSyncing = false;
 async function checkCanvaForUpdates() {
   if (isSyncing || getActiveSyncState().is_running) return;
 
+  // Night Power-Saving & Scale-to-Zero: Skip background polling outside office hours (19:00 - 06:00)
+  // This allows Neon Postgres to sleep (scale to zero) overnight with zero compute charges!
+  const currentHour = new Date().getHours();
+  if (currentHour >= 19 || currentHour < 6) {
+    return;
+  }
+
   try {
     const conn = await getCanvaConnection();
     if (!conn.auto_sync_enabled || !conn.has_token) {

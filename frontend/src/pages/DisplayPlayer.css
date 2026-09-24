@@ -10,7 +10,12 @@
   justify-content: center;
   overflow: hidden;
   user-select: none;
-  cursor: none; /* Hide cursor for kiosk signage */
+  cursor: none; /* Hide cursor for kiosk signage by default */
+  transition: cursor 0.2s ease;
+}
+
+.display-viewport.show-controls {
+  cursor: default; /* Show cursor when user interacts */
 }
 
 /* 16:9 Aspect-Ratio Display Stage */
@@ -54,7 +59,312 @@
   z-index: 10;
 }
 
-/* Elegant Signage Status Badge */
+/* Subtle Progress Line at bottom of stage */
+.slide-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #c5a880, #dfc8a8);
+  width: 0%;
+  z-index: 90;
+  transition: width 0.1s linear;
+}
+
+/* ==========================================================================
+   FLOATING "ON-THE-FLY" SLIDESHOW CONTROLS HUD
+   ========================================================================== */
+.display-controls-hud {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(18, 17, 16, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(197, 168, 128, 0.35);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75), 0 0 20px rgba(197, 168, 128, 0.1);
+  padding: 8px 16px;
+  border-radius: 9999px;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.display-controls-hud.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.hud-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f5f3ef;
+  padding: 7px 12px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.hud-btn:hover:not(:disabled) {
+  background: rgba(197, 168, 128, 0.25);
+  border-color: rgba(197, 168, 128, 0.6);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.hud-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.hud-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.hud-play-pause {
+  background: rgba(197, 168, 128, 0.2);
+  border-color: rgba(197, 168, 128, 0.4);
+  color: var(--accent-gold);
+}
+
+.hud-play-pause.is-paused {
+  background: rgba(234, 179, 8, 0.25);
+  border-color: rgba(234, 179, 8, 0.5);
+  color: #facc15;
+}
+
+.hud-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.18);
+  margin: 0 4px;
+}
+
+/* On-the-fly Slide Pill Switcher */
+.hud-slide-picker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 380px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+
+.hud-slide-picker::-webkit-scrollbar {
+  display: none;
+}
+
+.hud-slide-pill {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #d1cfca;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hud-slide-pill:hover {
+  background: rgba(197, 168, 128, 0.3);
+  color: #fff;
+  border-color: var(--accent-gold);
+}
+
+.hud-slide-pill.active {
+  background: linear-gradient(135deg, #c5a880, #dfc8a8);
+  color: #121110;
+  border-color: #dfc8a8;
+  box-shadow: 0 0 10px rgba(197, 168, 128, 0.5);
+  transform: scale(1.08);
+}
+
+.hud-sleep-btn {
+  color: #a1a1aa;
+}
+
+.hud-sleep-btn:hover {
+  color: #facc15;
+}
+
+/* ==========================================================================
+   OFFICE NIGHT STANDBY SCREEN (7:00 PM – 6:00 AM)
+   ========================================================================== */
+.display-standby-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at center, #1b1917 0%, #09090b 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  animation: fadeIn 0.8s ease;
+}
+
+.standby-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 40px;
+  max-width: 800px;
+}
+
+.standby-logo-box {
+  margin-bottom: 28px;
+}
+
+.standby-logo {
+  max-width: 320px;
+  width: 30vw;
+  height: auto;
+  filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.8));
+  opacity: 0.85;
+}
+
+.standby-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(197, 168, 128, 0.12);
+  border: 1px solid rgba(197, 168, 128, 0.35);
+  color: var(--accent-gold);
+  padding: 6px 16px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  margin-bottom: 24px;
+}
+
+.standby-moon-icon {
+  color: #facc15;
+  animation: floatMoon 3s ease-in-out infinite alternate;
+}
+
+@keyframes floatMoon {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-3px); }
+}
+
+.standby-clock {
+  font-size: 5rem;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.7);
+  margin-bottom: 8px;
+}
+
+.standby-date {
+  font-size: 1.25rem;
+  color: #a1a1aa;
+  font-weight: 400;
+  margin-bottom: 28px;
+}
+
+.standby-schedule-info {
+  margin-bottom: 32px;
+}
+
+.standby-info-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 20px;
+  border-radius: 12px;
+  color: #e4e4e7;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.standby-info-pill strong {
+  color: var(--accent-gold);
+}
+
+.standby-subtext {
+  font-size: 12px;
+  color: #71717a;
+}
+
+.standby-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-standby-wake {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #c5a880, #dfc8a8);
+  color: #121110;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(197, 168, 128, 0.35);
+  transition: all 0.2s ease;
+}
+
+.btn-standby-wake:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 25px rgba(197, 168, 128, 0.5);
+}
+
+.btn-standby-fs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #d1cfca;
+  padding: 12px 20px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-standby-fs:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+/* ==========================================================================
+   SIGNAGE STATUS BADGE
+   ========================================================================== */
 .signage-badge {
   position: absolute;
   bottom: 24px;
@@ -121,18 +431,6 @@
   font-weight: 600;
 }
 
-/* Subtle Progress Line at bottom of stage */
-.slide-progress-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #c5a880, #dfc8a8);
-  width: 0%;
-  z-index: 90;
-  transition: width 0.1s linear;
-}
-
 /* Empty / Loading State */
 .display-empty-state {
   position: absolute;
@@ -182,4 +480,9 @@
 @keyframes pulse-offline {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

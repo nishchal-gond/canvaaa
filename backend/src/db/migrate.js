@@ -52,6 +52,13 @@ export async function runMigrations() {
     VALUES (1, false, 10, NOW())
     ON CONFLICT (id) DO NOTHING;
 
+    -- Operating schedule & slide navigation columns for power/memory optimization
+    ALTER TABLE display_state ADD COLUMN IF NOT EXISTS schedule_enabled BOOLEAN DEFAULT true;
+    ALTER TABLE display_state ADD COLUMN IF NOT EXISTS schedule_start_time VARCHAR(10) DEFAULT '06:00';
+    ALTER TABLE display_state ADD COLUMN IF NOT EXISTS schedule_end_time VARCHAR(10) DEFAULT '19:00';
+    ALTER TABLE display_state ADD COLUMN IF NOT EXISTS last_slide_index INT DEFAULT 0;
+    ALTER TABLE display_state ADD COLUMN IF NOT EXISTS is_scheduled_sleep BOOLEAN DEFAULT false;
+
     -- Phase 2A: Canva Direct Sync Tables
     CREATE TABLE IF NOT EXISTS canva_connections (
       id INT PRIMARY KEY DEFAULT 1,

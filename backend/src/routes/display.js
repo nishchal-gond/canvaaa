@@ -5,12 +5,35 @@ import { purgeOldPresentations } from './presentations.js';
 
 const router = express.Router();
 
+// High-efficiency in-memory cache to save Neon queries and prevent 24/7 database wakeups
+let cachedDisplayPayload = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 15000; // 15-second cache TTL for read operations
+
+export function invalidateDisplayCache() {
+  cachedDisplayPayload = null;
+  cacheTimestamp = 0;
+}
+
 /**
- * Helper to fetch full current display payload
+ * Helper to fetch full current display payload (with in-memory cache to optimize Neon & Render usage)
  */
-export async function getCurrentDisplayPayload() {
+export async function getCurrentDisplayPayload(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && cachedDisplayPayload && (now - cacheTimestamp < CACHE_TTL_MS)) {
+    return {
+      ...cachedDisplayPayload,
+      connected_displays: sseBroadcaster.getClientCount()
+    };
+  }
+
   const stateResult = await query(
     `SELECT d.id, d.is_paused, d.rotation_interval, d.active_presentation_id, d.last_published_at,
+            COALESCE(d.schedule_enabled, true) AS schedule_enabled,
+            COALESCE(d.schedule_start_time, '06:00') AS schedule_start_time,
+            COALESCE(d.schedule_end_time, '19:00') AS schedule_end_time,
+            COALESCE(d.last_slide_index, 0) AS last_slide_index,
+            COALESCE(d.is_scheduled_sleep, false) AS is_scheduled_sleep,
             p.title AS active_title, p.original_format, p.media_type, p.page_count,
             p.duration, p.width, p.height, p.media_url, p.thumbnail_url
      FROM display_state d
@@ -21,7 +44,12 @@ export async function getCurrentDisplayPayload() {
   const state = stateResult.rows[0] || {
     is_paused: false,
     rotation_interval: 10,
-    active_presentation_id: null
+    active_presentation_id: null,
+    schedule_enabled: true,
+    schedule_start_time: '06:00',
+    schedule_end_time: '19:00',
+    last_slide_index: 0,
+    is_scheduled_sleep: false
   };
 
   let slides = [];
@@ -36,7 +64,7 @@ export async function getCurrentDisplayPayload() {
     slides = slidesResult.rows;
   }
 
-  return {
+  cachedDisplayPayload = {
     state: {
       is_paused: state.is_paused,
       rotation_interval: state.rotation_interval,
@@ -50,9 +78,19 @@ export async function getCurrentDisplayPayload() {
       height: state.height,
       media_url: state.media_url,
       thumbnail_url: state.thumbnail_url,
-      last_published_at: state.last_published_at
+      last_published_at: state.last_published_at,
+      schedule_enabled: Boolean(state.schedule_enabled),
+      schedule_start_time: state.schedule_start_time || '06:00',
+      schedule_end_time: state.schedule_end_time || '19:00',
+      last_slide_index: parseInt(state.last_slide_index, 10) || 0,
+      is_scheduled_sleep: Boolean(state.is_scheduled_sleep)
     },
-    slides,
+    slides
+  };
+  cacheTimestamp = Date.now();
+
+  return {
+    ...cachedDisplayPayload,
     connected_displays: sseBroadcaster.getClientCount()
   };
 }
@@ -107,7 +145,7 @@ router.post('/publish', async (req, res) => {
       [presentation_id]
     );
 
-    const payload = await getCurrentDisplayPayload();
+    const payload = await getCurrentDisplayPayload(true);
 
     // 4. Broadcast to connected displays
     sseBroadcaster.broadcast('PRESENTATION_PUBLISHED', payload);
@@ -136,7 +174,7 @@ router.post('/pause', async (req, res) => {
        WHERE id = 1`
     );
 
-    const payload = await getCurrentDisplayPayload();
+    const payload = await getCurrentDisplayPayload(true);
     sseBroadcaster.broadcast('DISPLAY_STATE_CHANGED', payload);
 
     res.json({
@@ -159,11 +197,12 @@ router.post('/continue', async (req, res) => {
     await query(
       `UPDATE display_state
        SET is_paused = false,
+           is_scheduled_sleep = false,
            updated_at = NOW()
        WHERE id = 1`
     );
 
-    const payload = await getCurrentDisplayPayload();
+    const payload = await getCurrentDisplayPayload(true);
     sseBroadcaster.broadcast('DISPLAY_STATE_CHANGED', payload);
 
     res.json({
@@ -197,7 +236,7 @@ router.post('/interval', async (req, res) => {
       [interval]
     );
 
-    const payload = await getCurrentDisplayPayload();
+    const payload = await getCurrentDisplayPayload(true);
     sseBroadcaster.broadcast('DISPLAY_STATE_CHANGED', payload);
 
     res.json({
@@ -208,6 +247,126 @@ router.post('/interval', async (req, res) => {
     });
   } catch (err) {
     console.error('Error setting rotation interval:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/display/navigate
+ * Manual skip / slide navigation on the fly (next, prev, or specific slide index)
+ */
+router.post('/navigate', async (req, res) => {
+  const { action, slide_index } = req.body;
+  const targetIndex = typeof slide_index === 'number' ? slide_index : parseInt(slide_index, 10);
+
+  try {
+    if (!isNaN(targetIndex) && targetIndex >= 0) {
+      await query(
+        `UPDATE display_state
+         SET last_slide_index = $1,
+             updated_at = NOW()
+         WHERE id = 1`,
+        [targetIndex]
+      );
+    }
+
+    const payload = await getCurrentDisplayPayload(true);
+
+    // Broadcast immediate on-the-fly navigation event to all connected displays
+    sseBroadcaster.broadcast('SLIDE_NAVIGATE', {
+      action: action || 'goto',
+      slide_index: targetIndex,
+      source: 'operator'
+    });
+
+    res.json({
+      success: true,
+      message: `Navigated to slide ${targetIndex} on the fly.`,
+      action,
+      slide_index: targetIndex,
+      payload
+    });
+  } catch (err) {
+    console.error('Error navigating slide:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/display/schedule
+ * Configures office operating hours & night power-saving sleep schedule
+ */
+router.post('/schedule', async (req, res) => {
+  const {
+    schedule_enabled,
+    schedule_start_time,
+    schedule_end_time,
+    is_scheduled_sleep
+  } = req.body;
+
+  try {
+    const isEnabled = typeof schedule_enabled === 'boolean' ? schedule_enabled : true;
+    const startTime = schedule_start_time || '06:00';
+    const endTime = schedule_end_time || '19:00';
+    const isSleep = Boolean(is_scheduled_sleep);
+
+    await query(
+      `UPDATE display_state
+       SET schedule_enabled = $1,
+           schedule_start_time = $2,
+           schedule_end_time = $3,
+           is_scheduled_sleep = $4,
+           updated_at = NOW()
+       WHERE id = 1`,
+      [isEnabled, startTime, endTime, isSleep]
+    );
+
+    const payload = await getCurrentDisplayPayload(true);
+    sseBroadcaster.broadcast('SCHEDULE_CHANGED', payload);
+
+    res.json({
+      success: true,
+      message: 'Display schedule configuration updated successfully.',
+      schedule: {
+        schedule_enabled: isEnabled,
+        schedule_start_time: startTime,
+        schedule_end_time: endTime,
+        is_scheduled_sleep: isSleep
+      },
+      payload
+    });
+  } catch (err) {
+    console.error('Error updating display schedule:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/display/save-slide
+ * Records current slide index (e.g. before night sleep or on slide transition)
+ */
+router.post('/save-slide', async (req, res) => {
+  const { slide_index } = req.body;
+  const idx = parseInt(slide_index, 10);
+  if (isNaN(idx) || idx < 0) {
+    return res.status(400).json({ error: 'Valid slide_index is required' });
+  }
+
+  try {
+    await query(
+      `UPDATE display_state
+       SET last_slide_index = $1,
+           updated_at = NOW()
+       WHERE id = 1`,
+      [idx]
+    );
+
+    if (cachedDisplayPayload?.state) {
+      cachedDisplayPayload.state.last_slide_index = idx;
+    }
+
+    res.json({ success: true, saved_slide_index: idx });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

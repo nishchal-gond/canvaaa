@@ -22,7 +22,11 @@ import {
   Sliders,
   Eye,
   ArrowRight,
-  Trash2
+  Trash2,
+  Moon,
+  Sun,
+  SkipBack,
+  SkipForward
 } from 'lucide-react';
 import './AdminPanel.css';
 import { apiUrl, assetUrl, getApiBaseUrl, setApiBaseUrl } from '../config/api';
@@ -39,6 +43,14 @@ export default function AdminPanel() {
   const [backendUrl, setBackendUrlState] = useState(getApiBaseUrl());
   const [showBackendConfig, setShowBackendConfig] = useState(false);
   const [customUrlInput, setCustomUrlInput] = useState(getApiBaseUrl());
+
+  // Office Schedule State (Default: Sleep 7:00 PM to 6:00 AM)
+  const [scheduleForm, setScheduleForm] = useState({
+    schedule_enabled: true,
+    schedule_start_time: '06:00',
+    schedule_end_time: '19:00',
+    is_scheduled_sleep: false
+  });
 
   // Canva Direct Sync State
   const [canvaStatus, setCanvaStatus] = useState(null);
@@ -96,6 +108,14 @@ export default function AdminPanel() {
       if (res.ok) {
         const data = await res.json();
         setDisplayState(data);
+        if (data.state) {
+          setScheduleForm({
+            schedule_enabled: data.state.schedule_enabled !== false,
+            schedule_start_time: data.state.schedule_start_time || '06:00',
+            schedule_end_time: data.state.schedule_end_time || '19:00',
+            is_scheduled_sleep: Boolean(data.state.is_scheduled_sleep)
+          });
+        }
         setBackendStatus('connected');
       } else {
         setBackendStatus('error');
@@ -271,7 +291,7 @@ export default function AdminPanel() {
             return;
           }
         }
-      } catch {}
+      } catch { }
 
       setIsCanvaSyncing(false);
       setCanvaFeedback({
@@ -711,6 +731,54 @@ export default function AdminPanel() {
     }
   };
 
+  // On-the-fly manual slide navigation (Next, Prev, or specific slide index)
+  const handleNavigateSlide = async (action, slideIndex = null) => {
+    try {
+      const res = await fetch(apiUrl('/api/display/navigate'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, slide_index: slideIndex })
+      });
+      if (res.ok) {
+        await loadDisplayState();
+      }
+    } catch (err) {
+      console.error('Failed to navigate slide on the fly:', err);
+    }
+  };
+
+  // Office Schedule Configuration & Neon Power-Saving Save
+  const handleSaveSchedule = async (updates) => {
+    const updated = { ...scheduleForm, ...updates };
+    setScheduleForm(updated);
+    try {
+      const res = await fetch(apiUrl('/api/display/schedule'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      if (res.ok) {
+        await loadDisplayState();
+      }
+    } catch (err) {
+      console.error('Failed to update office schedule:', err);
+    }
+  };
+
+  const isNightTimeNow = (() => {
+    const now = new Date();
+    const [startH, startM] = (scheduleForm.schedule_start_time || '06:00').split(':').map(Number);
+    const [endH, endM] = (scheduleForm.schedule_end_time || '19:00').split(':').map(Number);
+    const curMinutes = now.getHours() * 60 + now.getMinutes();
+    const startMinutes = (isNaN(startH) ? 6 : startH) * 60 + (isNaN(startM) ? 0 : startM);
+    const endMinutes = (isNaN(endH) ? 19 : endH) * 60 + (isNaN(endM) ? 0 : endM);
+    if (endMinutes > startMinutes) {
+      return curMinutes < startMinutes || curMinutes >= endMinutes;
+    } else {
+      return curMinutes >= endMinutes && curMinutes < startMinutes;
+    }
+  })();
+
   const isPaused = Boolean(displayState?.state?.is_paused);
   const currentInterval = displayState?.state?.rotation_interval || 10;
   const activeTitle = displayState?.state?.active_title || 'None';
@@ -723,7 +791,7 @@ export default function AdminPanel() {
   const latestCanvaVersion = canvaStatus?.latest_version;
   const isLatestVersionCurrentlyActive = Boolean(
     latestCanvaVersion &&
-      displayState?.state?.active_presentation_id === latestCanvaVersion.presentation_id
+    displayState?.state?.active_presentation_id === latestCanvaVersion.presentation_id
   );
   const canvaDesignTitle =
     canvaStatus?.connection?.design_title || 'Copy of Dashboard Screen 16/9';
@@ -753,8 +821,8 @@ export default function AdminPanel() {
               {backendStatus === 'connected'
                 ? 'Backend: Live'
                 : backendStatus === 'error'
-                ? 'Backend: Offline'
-                : 'Connecting...'}
+                  ? 'Backend: Offline'
+                  : 'Connecting...'}
             </span>
             <Settings size={14} style={{ opacity: 0.7 }} />
           </button>
@@ -807,9 +875,9 @@ export default function AdminPanel() {
 
       {/* Operator Control & System Status Bar */}
       <div className="operator-bar">
-        {/* Manual Pause / Continue Operator Card */}
+        {/* Card 1: Operator Display & On-The-Fly Manual Controls */}
         <div className="control-card">
-          <div className="card-label">Operator Display Controls</div>
+          <div className="card-label">Operator Display Controls & Slide Switcher</div>
           <div className="status-row">
             <div>
               <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
@@ -843,8 +911,93 @@ export default function AdminPanel() {
             </button>
           </div>
 
-          {/* Slide Rotation Interval / Scenario Speed Selector */}
+          {/* Manual Skip & Slide Show On The Fly */}
           <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Manual Skip / Slide Show On the Fly:
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--accent-gold)' }}>
+                ⚡ Instant Live Push
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => handleNavigateSlide('prev')}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  background: 'rgba(197, 168, 128, 0.15)',
+                  color: 'var(--accent-gold)',
+                  border: '1px solid rgba(197, 168, 128, 0.35)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <SkipBack size={14} />
+                <span>Prev Slide</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNavigateSlide('next')}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  background: 'rgba(197, 168, 128, 0.15)',
+                  color: 'var(--accent-gold)',
+                  border: '1px solid rgba(197, 168, 128, 0.35)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>Next Slide</span>
+                <SkipForward size={14} />
+              </button>
+
+              {/* Direct Slide Jump Pills for Active Presentation */}
+              {selectedSlides && selectedSlides.length > 0 && (
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginLeft: '6px', flexWrap: 'wrap' }}>
+                  {selectedSlides.slice(0, 10).map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => handleNavigateSlide('goto', s.slide_index - 1)}
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        background: '#23221f',
+                        color: '#d1cfca',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        cursor: 'pointer'
+                      }}
+                      title={`Jump to Slide ${s.slide_index} on the fly`}
+                    >
+                      {s.slide_index}
+                    </button>
+                  ))}
+                  {selectedSlides.length > 10 && (
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      +{selectedSlides.length - 10} more below
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Slide Rotation Interval / Speed Selector */}
+          <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                 Slide Rotation Speed:
@@ -877,7 +1030,144 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        {/* Live Display Telemetry Card */}
+        {/* Card 2: Office Schedule & Neon Power/Memory Optimizer */}
+        <div className="control-card">
+          <div className="card-label">Office Schedule & Neon Eco-Saver</div>
+          <div className="status-row">
+            <div>
+              <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
+                Operating Mode:{' '}
+              </span>
+              <span
+                className="status-badge"
+                style={{
+                  background: isNightTimeNow && scheduleForm.schedule_enabled ? 'rgba(234, 179, 8, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+                  color: isNightTimeNow && scheduleForm.schedule_enabled ? '#facc15' : '#4ade80',
+                  border: isNightTimeNow && scheduleForm.schedule_enabled ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid rgba(74, 222, 128, 0.4)'
+                }}
+              >
+                {isNightTimeNow && scheduleForm.schedule_enabled ? '🌙 NIGHT STANDBY (SLEEP)' : '🟢 OFFICE DAYTIME ACTIVE'}
+              </span>
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              {isNightTimeNow && scheduleForm.schedule_enabled
+                ? 'Scale-to-Zero Active: Resumes at 6:00 AM'
+                : 'Auto-Pauses at 7:00 PM tonight'}
+            </div>
+          </div>
+
+          {/* Schedule Settings Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', margin: '14px 0' }}>
+            <div style={{ background: '#171614', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                MORNING WAKE TIME (06:00 AM)
+              </label>
+              <input
+                type="time"
+                value={scheduleForm.schedule_start_time}
+                onChange={(e) => handleSaveSchedule({ schedule_start_time: e.target.value })}
+                style={{
+                  background: '#09090b',
+                  color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  padding: '6px 10px',
+                  borderRadius: '5px',
+                  width: '100%',
+                  fontSize: '13px'
+                }}
+              />
+            </div>
+            <div style={{ background: '#171614', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                EVENING SLEEP TIME (19:00 / 7 PM)
+              </label>
+              <input
+                type="time"
+                value={scheduleForm.schedule_end_time}
+                onChange={(e) => handleSaveSchedule({ schedule_end_time: e.target.value })}
+                style={{
+                  background: '#09090b',
+                  color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  padding: '6px 10px',
+                  borderRadius: '5px',
+                  width: '100%',
+                  fontSize: '13px'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Enable Toggle & Manual Trigger Buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+              <input
+                type="checkbox"
+                checked={Boolean(scheduleForm.schedule_enabled)}
+                onChange={(e) => handleSaveSchedule({ schedule_enabled: e.target.checked })}
+              />
+              <span style={{ fontWeight: '600', color: '#e4e4e7' }}>
+                Enable Automatic 7PM Pause / 6AM Resume
+              </span>
+            </label>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => handleSaveSchedule({ is_scheduled_sleep: true })}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: '600',
+                background: 'rgba(234, 179, 8, 0.15)',
+                color: '#facc15',
+                border: '1px solid rgba(234, 179, 8, 0.4)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+            >
+              <Moon size={14} />
+              <span>Test Sleep Now</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                handleContinue();
+                handleSaveSchedule({ is_scheduled_sleep: false });
+              }}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: '600',
+                background: 'rgba(74, 222, 128, 0.15)',
+                color: '#4ade80',
+                border: '1px solid rgba(74, 222, 128, 0.4)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+            >
+              <Sun size={14} />
+              <span>Wake Display Now</span>
+            </button>
+          </div>
+
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px', lineHeight: '1.4' }}>
+            ⚡ <strong>Neon & Render Eco-Saver:</strong> Stops all database queries overnight so Neon scales to zero compute units and preserves yesterday's slide to resume at 6:00 AM!
+          </div>
+        </div>
+
+        {/* Card 3: Live Display Telemetry Card */}
         <div className="control-card">
           <div className="card-label">Display Telemetry</div>
           <div className="stats-grid">
@@ -900,9 +1190,9 @@ export default function AdminPanel() {
               </div>
             </div>
             <div className="stat-box">
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Signage Mode</div>
-              <div className="stat-value" style={{ fontSize: '15px' }}>
-                {activeMediaType === 'video' ? 'Native Video' : '10s Slideshow'}
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Yesterday's Resumed Slide</div>
+              <div className="stat-value" style={{ fontSize: '15px', color: 'var(--accent-gold)' }}>
+                Slide {(displayState?.state?.last_slide_index || 0) + 1}
               </div>
             </div>
           </div>
@@ -1167,9 +1457,8 @@ export default function AdminPanel() {
             <div className="canva-stat-label">STATUS</div>
             <div className="canva-stat-val">
               <span
-                className={`canva-status-pill ${
-                  isCanvaConnected ? 'connected' : 'disconnected'
-                }`}
+                className={`canva-status-pill ${isCanvaConnected ? 'connected' : 'disconnected'
+                  }`}
               >
                 <span className="dot" />
                 {isCanvaConnected ? 'Connected' : 'Disconnected'}
@@ -1288,9 +1577,8 @@ export default function AdminPanel() {
 
             <button
               type="button"
-              className={`btn-canva-action btn-canva-publish ${
-                isLatestVersionCurrentlyActive ? 'is-active' : ''
-              }`}
+              className={`btn-canva-action btn-canva-publish ${isLatestVersionCurrentlyActive ? 'is-active' : ''
+                }`}
               onClick={() => handlePublishCanvaVersion(latestCanvaVersion?.id)}
               disabled={!latestCanvaVersion || isProcessing}
               title={
@@ -1332,11 +1620,10 @@ export default function AdminPanel() {
                   <button
                     key={sec}
                     type="button"
-                    className={`interval-pill ${
-                      (canvaStatus?.connection?.poll_interval_seconds || 60) === sec
+                    className={`interval-pill ${(canvaStatus?.connection?.poll_interval_seconds || 60) === sec
                         ? 'active'
                         : ''
-                    }`}
+                      }`}
                     onClick={() => handleChangeSyncInterval(sec)}
                   >
                     {sec < 60 ? `${sec}s` : `${sec / 60}m`}
@@ -1578,6 +1865,15 @@ export default function AdminPanel() {
                         e.target.style.opacity = '0';
                       }}
                     />
+                    <button
+                      type="button"
+                      className="btn-slide-jump"
+                      onClick={() => handleNavigateSlide('goto', slide.slide_index - 1)}
+                      title={`Show Slide ${slide.slide_index} immediately on the LG display`}
+                    >
+                      <Play size={12} />
+                      <span>Display on the Fly</span>
+                    </button>
                   </div>
                 ))}
               </div>
