@@ -184,9 +184,13 @@ export default function AdminPanel() {
   // Manual Trigger: Sync From Canva
   const handleSyncCanva = async (force = false) => {
     setIsCanvaSyncing(true);
+    const chosenFormat = canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'mp4';
+    const isVideo = chosenFormat === 'mp4';
     setCanvaFeedback({
       type: 'loading',
-      message: 'Connecting to Canva API & rendering latest 4K MP4 Video...'
+      message: isVideo
+        ? 'Connecting to Canva API & rendering 4K MP4 Video...'
+        : 'Connecting to Canva API & rasterizing presentation slides...'
     });
     try {
       const res = await fetch(apiUrl('/api/canva/sync'), {
@@ -195,7 +199,7 @@ export default function AdminPanel() {
         body: JSON.stringify({
           design_id: canvaStatus?.connection?.design_id || 'DAHVb9pmJzQ',
           force,
-          format: canvaConfigForm.export_format || 'mp4',
+          format: chosenFormat,
           auto_publish: canvaConfigForm.auto_publish !== false
         })
       });
@@ -208,12 +212,12 @@ export default function AdminPanel() {
           message: '⚡ Canva design is already up to date. (Canva timestamp matches latest sync).'
         });
       } else {
-        const isVideo = data.version?.export_format === 'MP4';
+        const isVideoSync = data.version?.export_format === 'MP4';
         setCanvaFeedback({
           type: 'success',
           message: data.is_published
-            ? `🚀 Canva ${isVideo ? 'Video' : 'Design'} synced & published LIVE to display!`
-            : `✅ Synced Canva ${isVideo ? 'Video' : 'Design'} version ${data.version?.version_label || ''}!`
+            ? `🚀 Canva ${isVideoSync ? '4K Video' : 'Slides'} synced & published LIVE to display!`
+            : `✅ Synced Canva ${isVideoSync ? '4K Video' : 'Slides'} version ${data.version?.version_label || ''}!`
         });
         if (data.version?.presentation_id) {
           await loadPresentations();
@@ -318,6 +322,23 @@ export default function AdminPanel() {
       }
     } catch (err) {
       console.error('Failed to update sync interval:', err);
+    }
+  };
+
+  // Change Canva Export Format (4K Video vs Slides)
+  const handleSwitchFormat = async (newFormat) => {
+    setCanvaConfigForm((prev) => ({ ...prev, export_format: newFormat }));
+    try {
+      const res = await fetch(apiUrl('/api/canva/auto-sync'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ export_format: newFormat })
+      });
+      if (res.ok) {
+        await loadCanvaStatus();
+      }
+    } catch (err) {
+      console.error('Failed to update export format:', err);
     }
   };
 
@@ -1115,6 +1136,61 @@ export default function AdminPanel() {
         {/* Primary Action Row: SYNC, PUBLISH, AUTO-SYNC */}
         <div className="canva-actions-strip">
           <div className="canva-action-buttons">
+            {/* Format Mode Selector: 4K Video vs Slides */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', background: '#121215', borderRadius: '8px', padding: '3px', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <button
+                type="button"
+                onClick={() => handleSwitchFormat('mp4')}
+                style={{
+                  background: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'mp4') === 'mp4'
+                    ? 'linear-gradient(135deg, #7d2ae8 0%, #00c4cc 100%)'
+                    : 'transparent',
+                  color: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'mp4') === 'mp4' ? '#fff' : '#a1a1aa',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '7px 12px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
+                }}
+                title="Export as native 4K looping video (Default for digital signage)"
+              >
+                <span>🎬 4K Video</span>
+                <span style={{ fontSize: '9px', background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: '4px' }}>DEFAULT</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSwitchFormat('pdf')}
+                style={{
+                  background: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format) === 'pdf'
+                    ? 'rgba(212, 175, 55, 0.25)'
+                    : 'transparent',
+                  color: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format) === 'pdf'
+                    ? 'var(--accent-gold)'
+                    : '#a1a1aa',
+                  border: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format) === 'pdf'
+                    ? '1px solid var(--accent-gold)'
+                    : 'none',
+                  borderRadius: '6px',
+                  padding: '7px 12px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
+                }}
+                title="Export as multi-slide carousel"
+              >
+                <span>📄 Slides (PDF)</span>
+              </button>
+            </div>
+
             <button
               type="button"
               className="btn-canva-action btn-sync"

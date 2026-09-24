@@ -327,11 +327,16 @@ export async function getCanvaDesignMetadata(designId) {
  * 2. Create Design Export Job
  * Calls Canva Connect API: POST /v1/exports
  */
-export async function createCanvaExportJob(designId, format = 'pdf') {
+export async function createCanvaExportJob(designId, format = 'mp4', quality = 'horizontal_4k') {
   const token = await getEffectiveToken();
   if (!token) throw new Error('Missing Canva API Access Token');
 
-  const res = await fetch(`${CANVA_API_BASE}/exports`, {
+  const formatObj = { type: format };
+  if (format === 'mp4') {
+    formatObj.quality = quality || 'horizontal_4k';
+  }
+
+  let res = await fetch(`${CANVA_API_BASE}/exports`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -339,11 +344,26 @@ export async function createCanvaExportJob(designId, format = 'pdf') {
     },
     body: JSON.stringify({
       design_id: designId,
-      format: {
-        type: format
-      }
+      format: formatObj
     })
   });
+
+  // If 4K is rejected by Canva API, automatically fall back to horizontal_1080p
+  if (!res.ok && format === 'mp4' && formatObj.quality === 'horizontal_4k') {
+    console.warn(`[Canva Export] 4K export returned ${res.status}. Falling back to horizontal_1080p...`);
+    formatObj.quality = 'horizontal_1080p';
+    res = await fetch(`${CANVA_API_BASE}/exports`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        design_id: designId,
+        format: formatObj
+      })
+    });
+  }
 
   if (!res.ok) {
     const errText = await res.text();
