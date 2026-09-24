@@ -100,6 +100,9 @@ export default function DisplayPlayer() {
   const mediaUrlRef = useRef(displayState?.media_url || null);
   const slidesHashRef = useRef('');
 
+  // Always-fresh ref to handleDisplayPayload so SSE (captured at mount) never uses a stale closure
+  const handleDisplayPayloadRef = useRef(null);
+
   const videoRef = useRef(null);
 
   // Determine whether display should be in night sleep/standby mode
@@ -229,6 +232,8 @@ export default function DisplayPlayer() {
 
   // Process incoming display payload from API, SSE, or offline cache
   const handleDisplayPayload = async (payload) => {
+    // NOTE: always update the ref so SSE stale-closure callers get the fresh version
+    // (The ref assignment below in the useEffect keeps it current)
     if (!payload) return;
 
     const newState = payload.state;
@@ -352,13 +357,33 @@ export default function DisplayPlayer() {
       });
   }, []);
 
+  // Keep the handleDisplayPayload ref always fresh so SSE event handlers never use stale closures
+  useEffect(() => {
+    handleDisplayPayloadRef.current = handleDisplayPayload;
+  });
+
   // Neon & Memory Optimized Polling:
   // Daytime: poll every 10s (SSE handles immediate updates).
-  // Night Sleep (7PM to 6AM): NO polling whatsoever to allow Neon to scale to zero!
+  // Night Sleep (7PM–6AM): NO active polling, but a 60s safety check still runs so that if the
+  // SSE connection dropped on the LG screen it will detect the sleep/wake state change within 60s.
   useEffect(() => {
     if (isEffectiveSleep) {
-      // During sleep, Neon database is allowed to shut down completely (0 queries)
-      return;
+      // During sleep, only run a slow 60s safety poll to detect wake signals if SSE dropped
+      const safetyInterval = setInterval(() => {
+        fetch(`${apiUrl('/api/display/current')}?_t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data) {
+              handleDisplayPayloadRef.current?.(data);
+            }
+          })
+          .catch(() => {});
+      }, 60000); // 60s — minimal Neon wakeups but catches SSE drops
+
+      return () => clearInterval(safetyInterval);
     }
 
     const syncInterval = setInterval(() => {
@@ -369,7 +394,7 @@ export default function DisplayPlayer() {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data) {
-            handleDisplayPayload(data);
+            handleDisplayPayloadRef.current?.(data);
             setConnectionStatus(data.state?.is_paused ? 'paused' : 'live');
           }
         })
@@ -390,7 +415,7 @@ export default function DisplayPlayer() {
       eventSource.addEventListener('INIT_STATE', (e) => {
         try {
           const data = JSON.parse(e.data);
-          handleDisplayPayload(data);
+          handleDisplayPayloadRef.current?.(data);
         } catch (err) {
           console.error('Failed to parse INIT_STATE:', err);
         }
@@ -399,7 +424,7 @@ export default function DisplayPlayer() {
       eventSource.addEventListener('PRESENTATION_PUBLISHED', (e) => {
         try {
           const data = JSON.parse(e.data);
-          handleDisplayPayload(data);
+          handleDisplayPayloadRef.current?.(data);
         } catch (err) {
           console.error('Failed to parse PRESENTATION_PUBLISHED:', err);
         }
@@ -408,7 +433,7 @@ export default function DisplayPlayer() {
       eventSource.addEventListener('DISPLAY_STATE_CHANGED', (e) => {
         try {
           const data = JSON.parse(e.data);
-          handleDisplayPayload(data);
+          handleDisplayPayloadRef.current?.(data);
         } catch (err) {
           console.error('Failed to parse DISPLAY_STATE_CHANGED:', err);
         }
@@ -442,7 +467,7 @@ export default function DisplayPlayer() {
       eventSource.addEventListener('SCHEDULE_CHANGED', (e) => {
         try {
           const data = JSON.parse(e.data);
-          handleDisplayPayload(data);
+          handleDisplayPayloadRef.current?.(data);
         } catch (err) {
           console.error('Failed to parse SCHEDULE_CHANGED:', err);
         }
