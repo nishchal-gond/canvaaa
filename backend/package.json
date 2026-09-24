@@ -5,8 +5,8 @@
   "main": "src/server.js",
   "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node --max-old-space-size=400 src/server.js",
+    "dev": "node --watch --max-old-space-size=400 src/server.js",
     "migrate": "node src/db/migrate.js"
   },
   "dependencies": {

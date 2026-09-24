@@ -21,8 +21,18 @@ const thumbsBaseDir = path.join(uploadsBaseDir, 'thumbnails');
 
 [docsDir, slidesBaseDir, videosDir, thumbsBaseDir].forEach((d) => fs.mkdirSync(d, { recursive: true }));
 
-// PKCE memory cache for pending OAuth sessions
+// PKCE memory cache for pending OAuth sessions (auto-expires after 10 minutes)
 const pkceSessions = new Map();
+
+// Periodic cleanup of expired PKCE sessions to prevent memory accumulation
+setInterval(() => {
+  const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+  for (const [state, session] of pkceSessions.entries()) {
+    if (session.createdAt < tenMinutesAgo) {
+      pkceSessions.delete(state);
+    }
+  }
+}, 5 * 60 * 1000); // Run cleanup every 5 minutes
 
 // Global active sync state tracker for async Canva operations
 let activeSyncState = {
@@ -464,7 +474,7 @@ export async function waitForCanvaExportJob(exportId, maxWaitSec = 180, onHeartb
 }
 
 /**
- * 4. Download Export File to Backend Disk
+ * 4. Download Export File to Backend Disk (streaming — does NOT buffer whole file in RAM)
  */
 export async function downloadCanvaFile(downloadUrl, targetPath) {
   const res = await fetch(downloadUrl);
@@ -472,8 +482,13 @@ export async function downloadCanvaFile(downloadUrl, targetPath) {
     throw new Error(`Failed to download exported file from Canva (${res.status})`);
   }
 
-  const arrayBuffer = await res.arrayBuffer();
-  fs.writeFileSync(targetPath, Buffer.from(arrayBuffer));
+  // Stream directly to disk — avoids loading large 4K MP4 files (100-500 MB) into Node.js heap
+  const { createWriteStream } = await import('fs');
+  const { pipeline } = await import('stream/promises');
+  const { Readable } = await import('stream');
+
+  const fileStream = createWriteStream(targetPath);
+  await pipeline(Readable.fromWeb(res.body), fileStream);
   return targetPath;
 }
 
