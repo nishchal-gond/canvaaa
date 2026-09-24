@@ -74,6 +74,10 @@ export async function runMigrations() {
     VALUES (1, 'DAHVb9pmJzQ', 'Copy of Dashboard Screen 16/9', 'disconnected', NOW())
     ON CONFLICT (id) DO NOTHING;
 
+    -- Phase 2B: Canva Video & Auto-Publish columns
+    ALTER TABLE canva_connections ADD COLUMN IF NOT EXISTS export_format VARCHAR(20) DEFAULT 'mp4';
+    ALTER TABLE canva_connections ADD COLUMN IF NOT EXISTS auto_publish BOOLEAN DEFAULT true;
+
     CREATE TABLE IF NOT EXISTS canva_versions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       design_id VARCHAR(100) NOT NULL,

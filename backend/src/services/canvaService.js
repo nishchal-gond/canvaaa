@@ -5,6 +5,9 @@ import { fileURLToPath } from 'url';
 import { query } from '../config/db.js';
 import { renderPdfToSlides } from './pdfRenderer.js';
 import { sseBroadcaster } from './sseBroadcaster.js';
+import { processVideo } from './videoProcessor.js';
+import { purgeOldPresentations } from '../routes/presentations.js';
+import { getCurrentDisplayPayload } from '../routes/display.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,8 +16,10 @@ const CANVA_API_BASE = 'https://api.canva.com/rest/v1';
 const uploadsBaseDir = path.resolve(__dirname, '../../uploads');
 const docsDir = path.join(uploadsBaseDir, 'docs');
 const slidesBaseDir = path.join(uploadsBaseDir, 'slides');
+const videosDir = path.join(uploadsBaseDir, 'videos');
+const thumbsBaseDir = path.join(uploadsBaseDir, 'thumbnails');
 
-[docsDir, slidesBaseDir].forEach((d) => fs.mkdirSync(d, { recursive: true }));
+[docsDir, slidesBaseDir, videosDir, thumbsBaseDir].forEach((d) => fs.mkdirSync(d, { recursive: true }));
 
 // PKCE memory cache for pending OAuth sessions
 const pkceSessions = new Map();
@@ -188,7 +193,9 @@ export async function getCanvaConnection() {
     has_client_secret: hasSecret,
     client_secret_masked: hasSecret ? '••••••••••••••••' : null,
     has_token: hasToken,
-    access_token_masked: hasToken ? '••••••••••••••••' : null
+    access_token_masked: hasToken ? '••••••••••••••••' : null,
+    export_format: conn.export_format || 'mp4',
+    auto_publish: conn.auto_publish !== false
   };
 }
 
@@ -209,7 +216,9 @@ export async function updateCanvaConnection(fields) {
     'last_canva_updated_at',
     'last_synced_at',
     'last_published_at',
-    'status'
+    'status',
+    'export_format',
+    'auto_publish'
   ];
 
   const updates = [];
@@ -407,17 +416,78 @@ export async function downloadCanvaFile(downloadUrl, targetPath) {
 }
 
 /**
- * 5. Full Orchestrated Canva Sync Pipeline
- * Canva API ➔ Export ➔ Download ➔ PyMuPDF ➔ Version Record ➔ Neon Postgres
+ * Publishes a specific synced Canva version to the Display
  */
-export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false } = {}) {
+export async function publishCanvaVersion(versionId) {
+  const versionRes = await query(
+    `SELECT v.*, p.title, p.page_count, p.original_format, p.media_type, p.media_url
+     FROM canva_versions v
+     JOIN presentations p ON v.presentation_id = p.id
+     WHERE v.id = $1`,
+    [versionId]
+  );
+
+  if (versionRes.rows.length === 0) {
+    throw new Error('Canva version not found.');
+  }
+
+  const version = versionRes.rows[0];
+  const presentationId = version.presentation_id;
+
+  // 1. Purge all older presentations and disk files so only this published presentation remains
+  await purgeOldPresentations(presentationId);
+
+  // 2. Mark this presentation active
+  await query(`UPDATE presentations SET is_active = true WHERE id = $1`, [presentationId]);
+
+  // 3. Mark this version as published, others false
+  await query(`UPDATE canva_versions SET is_published = false WHERE design_id = $1`, [version.design_id]);
+  await query(`UPDATE canva_versions SET is_published = true, published_at = NOW() WHERE id = $1`, [versionId]);
+
+  // 4. Update display_state
+  await query(
+    `UPDATE display_state
+     SET active_presentation_id = $1,
+         last_published_at = NOW(),
+         updated_at = NOW()
+     WHERE id = 1`,
+    [presentationId]
+  );
+
+  // 5. Update canva_connections last_published_at
+  await updateCanvaConnection({ last_published_at: new Date().toISOString() });
+
+  // 6. Broadcast to connected LG displays via SSE
+  const payload = await getCurrentDisplayPayload();
+  sseBroadcaster.broadcast('PRESENTATION_PUBLISHED', payload);
+
+  const isVideo = version.export_format === 'MP4' || version.media_type === 'video';
+  return {
+    success: true,
+    version,
+    payload,
+    message: isVideo
+      ? `Published Canva Native Video "${version.version_label}" live to 4K Display!`
+      : `Published Canva version "${version.version_label}" (${version.slide_count} slides) to LG display!`
+  };
+}
+
+/**
+ * 5. Full Orchestrated Canva Sync Pipeline
+ * Canva API ➔ Export (MP4 Video or PDF) ➔ Download ➔ Probe / PyMuPDF ➔ Auto-Publish ➔ Neon Postgres
+ */
+export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false, format = null, autoPublish = null } = {}) {
   const conn = await getCanvaConnection();
   const targetDesignId = designId || conn.design_id || 'DAHVb9pmJzQ';
   const token = await getEffectiveToken();
 
   if (!token) {
-    throw new Error('Cannot sync: Canva API Access Token is not configured. Please paste your token in the Canva Connection settings.');
+    throw new Error('Cannot sync: Canva API Access Token is not configured. Please paste your token in Canva Connection settings.');
   }
+
+  // Format defaults to 'mp4' for dynamic video signage
+  const requestedFormat = (format || conn.export_format || 'mp4').toLowerCase();
+  const shouldAutoPublish = typeof autoPublish === 'boolean' ? autoPublish : (conn.auto_publish !== false);
 
   // Step 1: Query current Canva design metadata
   const metaRes = await getCanvaDesignMetadata(targetDesignId);
@@ -431,11 +501,11 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false 
 
   // Step 2: Version deduplication check
   const existingVersionRes = await query(
-    `SELECT v.*, p.title, p.page_count, p.is_active
+    `SELECT v.*, p.title, p.page_count, p.media_type, p.is_active
      FROM canva_versions v
      LEFT JOIN presentations p ON v.presentation_id = p.id
-     WHERE v.design_id = $1 AND v.canva_updated_at = $2`,
-    [targetDesignId, canvaUpdatedAt]
+     WHERE v.design_id = $1 AND v.canva_updated_at = $2 AND UPPER(v.export_format) = $3`,
+    [targetDesignId, canvaUpdatedAt, requestedFormat.toUpperCase()]
   );
 
   if (existingVersionRes.rows.length > 0 && !force) {
@@ -449,64 +519,140 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false 
     };
   }
 
-  // Step 3: Retrieve PDF (from Canva Export API or Simulation Sandbox)
   const timestamp = Date.now();
-  const filename = `${timestamp}_Canva_${targetDesignId}.pdf`;
-  const pdfPath = path.join(docsDir, filename);
+  let presentationId = null;
+  let pageCount = 1;
+  let finalFormat = requestedFormat.toUpperCase();
+  let finalFilePath = null;
+  let slideRows = [];
 
-  if (token === 'simulation') {
-    console.log(`[Canva Sync (Sandbox)] Generating version ${canvaUpdatedAt} for design ${targetDesignId}...`);
-    const candidatePdfs = fs.readdirSync(docsDir).filter((f) => f.endsWith('.pdf') && !f.includes('test_powerpoint'));
-    if (candidatePdfs.length > 0) {
-      fs.copyFileSync(path.join(docsDir, candidatePdfs[0]), pdfPath);
+  if (requestedFormat === 'mp4') {
+    // -------------------------------------------------------------
+    // VIDEO WORKFLOW (MP4 Export & Display Native Video)
+    // -------------------------------------------------------------
+    const filename = `${timestamp}_Canva_${targetDesignId}.mp4`;
+    const videoPath = path.join(videosDir, filename);
+    finalFilePath = videoPath;
+
+    if (token === 'simulation') {
+      console.log(`[Canva Sync (Sandbox)] Generating MP4 version ${canvaUpdatedAt} for design ${targetDesignId}...`);
+      const candidateVideos = fs.readdirSync(videosDir).filter((f) => f.endsWith('.mp4'));
+      if (candidateVideos.length > 0) {
+        fs.copyFileSync(path.join(videosDir, candidateVideos[0]), videoPath);
+      } else {
+        throw new Error('Simulation sandbox requires at least one MP4 in uploads/videos/ to replicate Canva export.');
+      }
     } else {
-      throw new Error('Simulation sandbox requires at least one PDF in uploads/docs/ to replicate Canva export.');
+      console.log(`[Canva Sync] Creating MP4 video export job for design ${targetDesignId}...`);
+      const exportJob = await createCanvaExportJob(targetDesignId, 'mp4');
+
+      console.log(`[Canva Sync] Waiting for Canva MP4 render job ${exportJob.id}...`);
+      const downloadUrl = await waitForCanvaExportJob(exportJob.id, 180);
+
+      console.log(`[Canva Sync] Downloading rendered MP4 video from Canva CDN...`);
+      await downloadCanvaFile(downloadUrl, videoPath);
     }
-  } else {
-    console.log(`[Canva Sync] Creating PDF export job for design ${targetDesignId}...`);
-    const exportJob = await createCanvaExportJob(targetDesignId, 'pdf');
 
-    console.log(`[Canva Sync] Waiting for export job ${exportJob.id}...`);
-    const downloadUrl = await waitForCanvaExportJob(exportJob.id);
-
-    console.log(`[Canva Sync] Downloading exported PDF from Canva CDN...`);
-    await downloadCanvaFile(downloadUrl, pdfPath);
-  }
-
-  // Step 6: Process PDF into 4K/1080p slide images using existing PyMuPDF pipeline
-  const presResult = await query(
-    `INSERT INTO presentations
-     (title, filename, original_format, media_type, page_count, is_active)
-     VALUES ($1, $2, 'PDF', 'presentation', 0, false)
-     RETURNING id, title, filename, original_format, media_type, created_at`,
-    [`Canva: ${designTitle}`, filename]
-  );
-
-  const presentationId = presResult.rows[0].id;
-  const presentationSlidesDir = path.join(slidesBaseDir, presentationId);
-
-  console.log(`[Canva Sync] Rendering slides via PyMuPDF...`);
-  const renderResult = await renderPdfToSlides(pdfPath, presentationSlidesDir);
-  const pageCount = renderResult.page_count;
-
-  await query('UPDATE presentations SET page_count = $1 WHERE id = $2', [pageCount, presentationId]);
-
-  const slideRows = [];
-  for (const slide of renderResult.slides) {
-    const relativeImagePath = `/uploads/slides/${presentationId}/${slide.filename}`;
-    const sRes = await query(
-      `INSERT INTO slides (presentation_id, slide_index, image_path, width, height)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, slide_index, image_path, width, height, created_at`,
-      [presentationId, slide.slide_index, relativeImagePath, slide.width, slide.height]
+    // Insert Initial Presentation record
+    const mediaUrl = `/uploads/videos/${filename}`;
+    const presResult = await query(
+      `INSERT INTO presentations
+       (title, filename, original_format, media_type, page_count, duration, width, height, media_url, thumbnail_url, is_active)
+       VALUES ($1, $2, 'MP4', 'video', 1, 10, 1920, 1080, $3, null, false)
+       RETURNING id, title, filename, original_format, media_type, created_at`,
+      [`Canva: ${designTitle}`, filename, mediaUrl]
     );
-    slideRows.push(sRes.rows[0]);
-  }
 
-  let thumbnailUrl = null;
-  if (slideRows.length > 0) {
-    thumbnailUrl = slideRows[0].image_path;
-    await query('UPDATE presentations SET thumbnail_url = $1 WHERE id = $2', [thumbnailUrl, presentationId]);
+    presentationId = presResult.rows[0].id;
+
+    // Probe video duration, width, height & extract thumbnail poster
+    const thumbDir = path.join(thumbsBaseDir, presentationId);
+    fs.mkdirSync(thumbDir, { recursive: true });
+    const thumbFileName = 'poster.jpg';
+    const thumbPath = path.join(thumbDir, thumbFileName);
+    let videoDuration = 10;
+    let videoWidth = 1920;
+    let videoHeight = 1080;
+    let thumbUrl = null;
+
+    try {
+      const probeResult = await processVideo(videoPath, thumbPath);
+      videoDuration = probeResult.duration || 10;
+      videoWidth = probeResult.width || 1920;
+      videoHeight = probeResult.height || 1080;
+      if (probeResult.thumbnail) {
+        thumbUrl = `/uploads/thumbnails/${presentationId}/${thumbFileName}`;
+      }
+    } catch (probeErr) {
+      console.warn('[Canva Sync] Video probe non-fatal note:', probeErr.message);
+    }
+
+    await query(
+      `UPDATE presentations
+       SET duration = $1, width = $2, height = $3, thumbnail_url = $4
+       WHERE id = $5`,
+      [videoDuration, videoWidth, videoHeight, thumbUrl, presentationId]
+    );
+
+  } else {
+    // -------------------------------------------------------------
+    // SLIDES WORKFLOW (PDF Export & PyMuPDF 4K Rasterization)
+    // -------------------------------------------------------------
+    const filename = `${timestamp}_Canva_${targetDesignId}.pdf`;
+    const pdfPath = path.join(docsDir, filename);
+    finalFilePath = pdfPath;
+
+    if (token === 'simulation') {
+      console.log(`[Canva Sync (Sandbox)] Generating PDF version ${canvaUpdatedAt} for design ${targetDesignId}...`);
+      const candidatePdfs = fs.readdirSync(docsDir).filter((f) => f.endsWith('.pdf') && !f.includes('test_powerpoint'));
+      if (candidatePdfs.length > 0) {
+        fs.copyFileSync(path.join(docsDir, candidatePdfs[0]), pdfPath);
+      } else {
+        throw new Error('Simulation sandbox requires at least one PDF in uploads/docs/ to replicate Canva export.');
+      }
+    } else {
+      console.log(`[Canva Sync] Creating PDF export job for design ${targetDesignId}...`);
+      const exportJob = await createCanvaExportJob(targetDesignId, 'pdf');
+
+      console.log(`[Canva Sync] Waiting for export job ${exportJob.id}...`);
+      const downloadUrl = await waitForCanvaExportJob(exportJob.id, 120);
+
+      console.log(`[Canva Sync] Downloading exported PDF from Canva CDN...`);
+      await downloadCanvaFile(downloadUrl, pdfPath);
+    }
+
+    const presResult = await query(
+      `INSERT INTO presentations
+       (title, filename, original_format, media_type, page_count, is_active)
+       VALUES ($1, $2, 'PDF', 'presentation', 0, false)
+       RETURNING id, title, filename, original_format, media_type, created_at`,
+      [`Canva: ${designTitle}`, filename]
+    );
+
+    presentationId = presResult.rows[0].id;
+    const presentationSlidesDir = path.join(slidesBaseDir, presentationId);
+
+    console.log(`[Canva Sync] Rendering slides via PyMuPDF...`);
+    const renderResult = await renderPdfToSlides(pdfPath, presentationSlidesDir);
+    pageCount = renderResult.page_count;
+
+    await query('UPDATE presentations SET page_count = $1 WHERE id = $2', [pageCount, presentationId]);
+
+    for (const slide of renderResult.slides) {
+      const relativeImagePath = `/uploads/slides/${presentationId}/${slide.filename}`;
+      const sRes = await query(
+        `INSERT INTO slides (presentation_id, slide_index, image_path, width, height)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, slide_index, image_path, width, height, created_at`,
+        [presentationId, slide.slide_index, relativeImagePath, slide.width, slide.height]
+      );
+      slideRows.push(sRes.rows[0]);
+    }
+
+    if (slideRows.length > 0) {
+      const thumbnailUrl = slideRows[0].image_path;
+      await query('UPDATE presentations SET thumbnail_url = $1 WHERE id = $2', [thumbnailUrl, presentationId]);
+    }
   }
 
   // Step 7: Record Version in canva_versions
@@ -514,11 +660,11 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false 
   const versionRes = await query(
     `INSERT INTO canva_versions
      (design_id, canva_updated_at, version_label, export_format, presentation_id, slide_count, file_path, status, is_published, synced_at)
-     VALUES ($1, $2, $3, 'PDF', $4, $5, $6, 'processed', false, NOW())
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'processed', false, NOW())
      ON CONFLICT (design_id, canva_updated_at)
-     DO UPDATE SET presentation_id = EXCLUDED.presentation_id, slide_count = EXCLUDED.slide_count, status = 'processed', synced_at = NOW()
+     DO UPDATE SET presentation_id = EXCLUDED.presentation_id, export_format = EXCLUDED.export_format, slide_count = EXCLUDED.slide_count, file_path = EXCLUDED.file_path, status = 'processed', synced_at = NOW()
      RETURNING *`,
-    [targetDesignId, canvaUpdatedAt, versionLabel, presentationId, pageCount, pdfPath]
+    [targetDesignId, canvaUpdatedAt, versionLabel, finalFormat, presentationId, pageCount, finalFilePath]
   );
 
   const versionRecord = versionRes.rows[0];
@@ -531,20 +677,38 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false 
     status: 'connected'
   });
 
+  // Step 9: Automatically Publish to Live Display if enabled
+  let publishedPayload = null;
+  if (shouldAutoPublish) {
+    try {
+      const pubRes = await publishCanvaVersion(versionRecord.id);
+      publishedPayload = pubRes.payload;
+      console.log(`[Canva Sync] ✅ Automatically published new Canva version ${versionLabel} (${finalFormat}) to live display!`);
+    } catch (pubErr) {
+      console.warn(`[Canva Sync] Auto-publish notice: ${pubErr.message}`);
+    }
+  }
+
   // Broadcast sync event to Admin Panel
   sseBroadcaster.broadcast('CANVA_SYNC_COMPLETED', {
     version: versionRecord,
     presentation_id: presentationId,
     slide_count: pageCount,
+    export_format: finalFormat,
+    media_type: finalFormat === 'MP4' ? 'video' : 'presentation',
+    is_published: Boolean(publishedPayload),
     title: designTitle
   });
 
   return {
     success: true,
     already_up_to_date: false,
-    message: `Successfully synchronized Canva design: "${designTitle}" (${pageCount} slides)`,
+    message: publishedPayload
+      ? `Successfully synchronized & published Canva ${finalFormat} version ${versionLabel} live to Display!`
+      : `Successfully synchronized Canva ${finalFormat} version: "${designTitle}"`,
     version: versionRecord,
     presentation_id: presentationId,
+    is_published: Boolean(publishedPayload),
     slides: slideRows
   };
 }
@@ -554,7 +718,7 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false 
  */
 export async function getCanvaVersions(designId = 'DAHVb9pmJzQ') {
   const res = await query(
-    `SELECT v.*, p.title AS presentation_title, p.thumbnail_url, p.is_active
+    `SELECT v.*, p.title AS presentation_title, p.thumbnail_url, p.is_active, p.media_type, p.media_url, p.duration, p.width, p.height
      FROM canva_versions v
      LEFT JOIN presentations p ON v.presentation_id = p.id
      WHERE v.design_id = $1

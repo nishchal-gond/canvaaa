@@ -39,13 +39,18 @@ async function checkCanvaForUpdates() {
       isSyncing = true;
 
       try {
-        const syncResult = await syncCanvaDesign({ designId });
+        const syncResult = await syncCanvaDesign({
+          designId,
+          format: conn.export_format || 'mp4',
+          autoPublish: conn.auto_publish !== false
+        });
         console.log(`[AutoSync] ✅ Automated sync successful: ${syncResult.message}`);
 
         sseBroadcaster.broadcast('CANVA_AUTO_SYNCED', {
           design_id: designId,
           version: syncResult.version,
-          presentation_id: syncResult.presentation_id
+          presentation_id: syncResult.presentation_id,
+          is_published: syncResult.is_published
         });
       } finally {
         isSyncing = false;

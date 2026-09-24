@@ -10,7 +10,8 @@ import {
   syncCanvaDesign,
   getCanvaVersions,
   generateCanvaAuthUrl,
-  exchangeCanvaAuthCode
+  exchangeCanvaAuthCode,
+  publishCanvaVersion
 } from '../services/canvaService.js';
 
 const router = express.Router();
@@ -179,15 +180,17 @@ router.post('/connect', async (req, res) => {
 
 /**
  * POST /api/canva/sync
- * Manually triggers sync from Canva (detects version, exports PDF, rasterizes 4K slides)
+ * Manually triggers sync from Canva (exports MP4 Video or PDF slides and updates display)
  */
 router.post('/sync', async (req, res) => {
-  const { design_id, force } = req.body;
+  const { design_id, force, format, auto_publish } = req.body;
 
   try {
     const result = await syncCanvaDesign({
       designId: design_id,
-      force: Boolean(force)
+      force: Boolean(force),
+      format: format || undefined,
+      autoPublish: typeof auto_publish === 'boolean' ? auto_publish : undefined
     });
 
     res.json(result);
@@ -202,14 +205,16 @@ router.post('/sync', async (req, res) => {
 
 /**
  * POST /api/canva/auto-sync
- * Enables or disables automated background sync polling
+ * Enables or disables automated background sync polling and auto-publish
  */
 router.post('/auto-sync', async (req, res) => {
-  const { enabled, interval_seconds } = req.body;
+  const { enabled, interval_seconds, auto_publish, export_format } = req.body;
 
   try {
     const fields = {};
     if (typeof enabled === 'boolean') fields.auto_sync_enabled = enabled;
+    if (typeof auto_publish === 'boolean') fields.auto_publish = auto_publish;
+    if (export_format) fields.export_format = export_format;
     if (interval_seconds && !isNaN(interval_seconds)) {
       fields.poll_interval_seconds = Math.max(15, parseInt(interval_seconds, 10));
     }
@@ -218,12 +223,14 @@ router.post('/auto-sync', async (req, res) => {
 
     sseBroadcaster.broadcast('CANVA_AUTO_SYNC_CHANGED', {
       auto_sync_enabled: updated.auto_sync_enabled,
-      poll_interval_seconds: updated.poll_interval_seconds
+      poll_interval_seconds: updated.poll_interval_seconds,
+      auto_publish: updated.auto_publish,
+      export_format: updated.export_format
     });
 
     res.json({
       success: true,
-      message: `Auto Sync ${updated.auto_sync_enabled ? 'enabled' : 'disabled'} (polling every ${updated.poll_interval_seconds}s)`,
+      message: `Auto Sync ${updated.auto_sync_enabled ? 'enabled' : 'disabled'} (polling every ${updated.poll_interval_seconds}s, format: ${updated.export_format})`,
       connection: updated
     });
   } catch (err) {
@@ -249,59 +256,14 @@ router.get('/versions', async (req, res) => {
 
 /**
  * POST /api/canva/publish/:versionId
- * Publishes a specific synced Canva version to the LG Display
+ * Publishes a specific synced Canva version to the Display
  */
 router.post('/publish/:versionId', async (req, res) => {
   const { versionId } = req.params;
 
   try {
-    const versionRes = await query(
-      `SELECT v.*, p.title, p.page_count
-       FROM canva_versions v
-       JOIN presentations p ON v.presentation_id = p.id
-       WHERE v.id = $1`,
-      [versionId]
-    );
-
-    if (versionRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Canva version not found.' });
-    }
-
-    const version = versionRes.rows[0];
-    const presentationId = version.presentation_id;
-
-    // 1. Purge all older presentations and disk files so only this published presentation remains
-    await purgeOldPresentations(presentationId);
-
-    // 2. Mark this presentation active
-    await query(`UPDATE presentations SET is_active = true WHERE id = $1`, [presentationId]);
-
-    // 3. Mark this version as published, others false
-    await query(`UPDATE canva_versions SET is_published = false WHERE design_id = $1`, [version.design_id]);
-    await query(`UPDATE canva_versions SET is_published = true, published_at = NOW() WHERE id = $1`, [versionId]);
-
-    // 3. Update display_state
-    await query(
-      `UPDATE display_state
-       SET active_presentation_id = $1,
-           last_published_at = NOW(),
-           updated_at = NOW()
-       WHERE id = 1`,
-      [presentationId]
-    );
-
-    // 4. Update canva_connections last_published_at
-    await updateCanvaConnection({ last_published_at: new Date().toISOString() });
-
-    // 5. Broadcast to connected LG displays via SSE
-    const payload = await getCurrentDisplayPayload();
-    sseBroadcaster.broadcast('PRESENTATION_PUBLISHED', payload);
-
-    res.json({
-      success: true,
-      message: `Published Canva version "${version.version_label}" (${version.slide_count} slides) to LG display!`,
-      payload
-    });
+    const result = await publishCanvaVersion(versionId);
+    res.json(result);
   } catch (err) {
     console.error('Error publishing Canva version:', err);
     res.status(500).json({ error: err.message });

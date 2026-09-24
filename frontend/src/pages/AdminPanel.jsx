@@ -53,6 +53,8 @@ export default function AdminPanel() {
     design_id: 'DAHVb9pmJzQ',
     design_title: 'Copy of Dashboard Screen 16/9',
     access_token: '',
+    export_format: 'mp4',
+    auto_publish: true,
     simulation_mode: false
   });
 
@@ -164,7 +166,9 @@ export default function AdminPanel() {
             client_id: data.connection.client_id || prev.client_id || 'OC-AAdIyAng356N',
             client_secret: data.connection.client_secret_masked || prev.client_secret || '',
             design_id: data.connection.design_id || 'DAHVb9pmJzQ',
-            design_title: data.connection.design_title || 'Copy of Dashboard Screen 16/9'
+            design_title: data.connection.design_title || 'Copy of Dashboard Screen 16/9',
+            export_format: data.connection.export_format || 'mp4',
+            auto_publish: data.connection.auto_publish !== false
           }));
         }
       }
@@ -182,7 +186,7 @@ export default function AdminPanel() {
     setIsCanvaSyncing(true);
     setCanvaFeedback({
       type: 'loading',
-      message: 'Connecting to Canva API & fetching latest design export...'
+      message: 'Connecting to Canva API & rendering latest 4K MP4 Video...'
     });
     try {
       const res = await fetch(apiUrl('/api/canva/sync'), {
@@ -190,7 +194,9 @@ export default function AdminPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           design_id: canvaStatus?.connection?.design_id || 'DAHVb9pmJzQ',
-          force
+          force,
+          format: canvaConfigForm.export_format || 'mp4',
+          auto_publish: canvaConfigForm.auto_publish !== false
         })
       });
       const data = await res.json();
@@ -202,13 +208,17 @@ export default function AdminPanel() {
           message: '⚡ Canva design is already up to date. (Canva timestamp matches latest sync).'
         });
       } else {
+        const isVideo = data.version?.export_format === 'MP4';
         setCanvaFeedback({
           type: 'success',
-          message: `✅ Synced version ${data.version?.version_label || ''} with ${data.version?.slide_count} slides!`
+          message: data.is_published
+            ? `🚀 Canva ${isVideo ? 'Video' : 'Design'} synced & published LIVE to display!`
+            : `✅ Synced Canva ${isVideo ? 'Video' : 'Design'} version ${data.version?.version_label || ''}!`
         });
         if (data.version?.presentation_id) {
           await loadPresentations();
           await loadPresentationDetails(data.version.presentation_id);
+          await loadDisplayState();
         }
       }
       await loadCanvaStatus();
@@ -914,6 +924,46 @@ export default function AdminPanel() {
                   placeholder="e.g. Copy of Dashboard Screen 16/9"
                 />
               </div>
+              <div className="config-field">
+                <label>Export Format</label>
+                <select
+                  value={canvaConfigForm.export_format || 'mp4'}
+                  onChange={(e) =>
+                    setCanvaConfigForm({ ...canvaConfigForm, export_format: e.target.value })
+                  }
+                  style={{
+                    background: '#09090b',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    width: '100%'
+                  }}
+                >
+                  <option value="mp4">🎬 Native Video (MP4) — High Quality Looping Video</option>
+                  <option value="pdf">📄 Slides Presentation (PDF) — Static Slide Carousel</option>
+                </select>
+              </div>
+
+              <div className="config-field" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '14px' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(canvaConfigForm.auto_publish !== false)}
+                    onChange={(e) =>
+                      setCanvaConfigForm({ ...canvaConfigForm, auto_publish: e.target.checked })
+                    }
+                  />
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#e4e4e7' }}>
+                    Auto-Publish to Display on Sync
+                  </span>
+                </label>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Immediately update 4K displays when Canva video sync completes
+                </span>
+              </div>
+
               <div className="config-field" style={{ gridColumn: '1 / -1' }}>
                 <label>Canva Bearer Access Token (or "simulation" for sandbox mode)</label>
                 <input
@@ -1057,7 +1107,7 @@ export default function AdminPanel() {
           <div className="canva-alert-badge">
             <Sparkles size={16} />
             <span>
-              <strong>New Canva changes detected!</strong> Canva design has been edited since last sync. Press "SYNC FROM CANVA" below to fetch updates.
+              <strong>New Canva changes detected!</strong> Canva design has been edited since last sync. Press "SYNC FROM CANVA" below to export as MP4 Video & publish live.
             </span>
           </div>
         )}
@@ -1186,7 +1236,9 @@ export default function AdminPanel() {
                       <div className="version-info-left">
                         <span className="version-code">{v.version_label || v.id.slice(0, 8)}</span>
                         <span className="version-meta">
-                          {v.slide_count} Slides • {v.export_format} • Synced {formatTimestamp(v.synced_at)}
+                          {v.export_format === 'MP4'
+                            ? `🎬 Native Video • Synced ${formatTimestamp(v.synced_at)}`
+                            : `${v.slide_count} Slides • ${v.export_format} • Synced ${formatTimestamp(v.synced_at)}`}
                         </span>
                       </div>
                       <div className="version-info-right">
