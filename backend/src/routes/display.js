@@ -305,10 +305,15 @@ router.post('/schedule', async (req, res) => {
   } = req.body;
 
   try {
-    const isEnabled = typeof schedule_enabled === 'boolean' ? schedule_enabled : true;
-    const startTime = schedule_start_time || '06:00';
-    const endTime = schedule_end_time || '19:00';
-    const isSleep = Boolean(is_scheduled_sleep);
+    const curr = await query(
+      'SELECT schedule_enabled, schedule_start_time, schedule_end_time, is_scheduled_sleep FROM display_state WHERE id = 1'
+    );
+    const existing = curr.rows[0] || {};
+
+    const isEnabled = typeof schedule_enabled === 'boolean' ? schedule_enabled : (existing.schedule_enabled !== false);
+    const startTime = schedule_start_time || existing.schedule_start_time || '06:00';
+    const endTime = schedule_end_time || existing.schedule_end_time || '19:00';
+    const isSleep = typeof is_scheduled_sleep === 'boolean' ? is_scheduled_sleep : Boolean(existing.is_scheduled_sleep);
 
     await query(
       `UPDATE display_state

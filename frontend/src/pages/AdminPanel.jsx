@@ -62,6 +62,7 @@ export default function AdminPanel() {
   }, [isCanvaSyncing]);
 
   const [canvaFeedback, setCanvaFeedback] = useState(null);
+  const [scheduleFeedback, setScheduleFeedback] = useState(null);
   const [showCanvaConfig, setShowCanvaConfig] = useState(false);
   const [showVersionsDrawer, setShowVersionsDrawer] = useState(false);
   const [canvaConfigForm, setCanvaConfigForm] = useState({
@@ -77,6 +78,14 @@ export default function AdminPanel() {
 
   const fileInputRef = useRef(null);
   const [scrollY, setScrollY] = useState(0);
+
+  // Auto-dismiss schedule feedback notification
+  useEffect(() => {
+    if (scheduleFeedback) {
+      const t = setTimeout(() => setScheduleFeedback(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [scheduleFeedback]);
 
   // Track window scroll position to toggle floating scroll button
   useEffect(() => {
@@ -522,6 +531,24 @@ export default function AdminPanel() {
         }
       });
 
+      eventSource.addEventListener('SCHEDULE_CHANGED', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setDisplayState(data);
+          if (data.state) {
+            setScheduleForm((prev) => ({
+              ...prev,
+              schedule_enabled: data.state.schedule_enabled !== false,
+              schedule_start_time: data.state.schedule_start_time || '06:00',
+              schedule_end_time: data.state.schedule_end_time || '19:00',
+              is_scheduled_sleep: Boolean(data.state.is_scheduled_sleep)
+            }));
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      });
+
       eventSource.addEventListener('CANVA_SYNC_PROGRESS', (e) => {
         try {
           const data = JSON.parse(e.data);
@@ -759,6 +786,11 @@ export default function AdminPanel() {
       });
       if (res.ok) {
         await loadDisplayState();
+        if (updates.is_scheduled_sleep === true) {
+          setScheduleFeedback({ type: 'info', message: '🌙 Display put into Night Standby (Scale-to-Zero Eco Sleep).' });
+        } else if (updates.is_scheduled_sleep === false) {
+          setScheduleFeedback({ type: 'success', message: '☀️ Display awakened and resumed playback!' });
+        }
       }
     } catch (err) {
       console.error('Failed to update office schedule:', err);
@@ -766,6 +798,12 @@ export default function AdminPanel() {
   };
 
   const isNightTimeNow = (() => {
+    if (scheduleForm.is_scheduled_sleep || displayState?.state?.is_scheduled_sleep) {
+      return true;
+    }
+    if (scheduleForm.schedule_enabled === false) {
+      return false;
+    }
     const now = new Date();
     const [startH, startM] = (scheduleForm.schedule_start_time || '06:00').split(':').map(Number);
     const [endH, endM] = (scheduleForm.schedule_end_time || '19:00').split(':').map(Number);
@@ -896,18 +934,44 @@ export default function AdminPanel() {
             <button
               className="btn-operator btn-pause"
               onClick={handlePause}
-              disabled={isPaused || isProcessing}
+              disabled={isPaused || isProcessing || isNightTimeNow}
             >
               <Pause size={18} />
               <span>PAUSE DISPLAY</span>
             </button>
             <button
               className="btn-operator btn-continue"
-              onClick={handleContinue}
-              disabled={!isPaused || isProcessing}
+              onClick={() => {
+                handleContinue();
+                if (scheduleForm.is_scheduled_sleep) {
+                  handleSaveSchedule({ is_scheduled_sleep: false });
+                }
+              }}
+              disabled={(!isPaused && !isNightTimeNow) || isProcessing}
             >
               <Play size={18} />
               <span>CONTINUE ROTATION</span>
+            </button>
+            <button
+              className="btn-operator"
+              style={{
+                background: isNightTimeNow ? 'rgba(234, 179, 8, 0.25)' : '#1e1d1b',
+                color: isNightTimeNow ? '#facc15' : '#d1cfca',
+                border: isNightTimeNow ? '1px solid #facc15' : '1px solid rgba(255,255,255,0.15)',
+                cursor: 'pointer'
+              }}
+              onClick={() => {
+                if (isNightTimeNow) {
+                  handleContinue();
+                  handleSaveSchedule({ is_scheduled_sleep: false });
+                } else {
+                  handleSaveSchedule({ is_scheduled_sleep: true });
+                }
+              }}
+              title={isNightTimeNow ? 'Wake display screen' : 'Put display screen to night standby sleep'}
+            >
+              {isNightTimeNow ? <Sun size={18} /> : <Moon size={18} />}
+              <span>{isNightTimeNow ? 'WAKE SCREEN' : 'SLEEP SCREEN'}</span>
             </button>
           </div>
 
@@ -1041,16 +1105,16 @@ export default function AdminPanel() {
               <span
                 className="status-badge"
                 style={{
-                  background: isNightTimeNow && scheduleForm.schedule_enabled ? 'rgba(234, 179, 8, 0.15)' : 'rgba(74, 222, 128, 0.15)',
-                  color: isNightTimeNow && scheduleForm.schedule_enabled ? '#facc15' : '#4ade80',
-                  border: isNightTimeNow && scheduleForm.schedule_enabled ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid rgba(74, 222, 128, 0.4)'
+                  background: isNightTimeNow ? 'rgba(234, 179, 8, 0.2)' : 'rgba(74, 222, 128, 0.2)',
+                  color: isNightTimeNow ? '#facc15' : '#4ade80',
+                  border: isNightTimeNow ? '1px solid rgba(234, 179, 8, 0.5)' : '1px solid rgba(74, 222, 128, 0.5)'
                 }}
               >
-                {isNightTimeNow && scheduleForm.schedule_enabled ? '🌙 NIGHT STANDBY (SLEEP)' : '🟢 OFFICE DAYTIME ACTIVE'}
+                {isNightTimeNow ? '🌙 NIGHT STANDBY (SLEEP)' : '🟢 OFFICE DAYTIME ACTIVE'}
               </span>
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              {isNightTimeNow && scheduleForm.schedule_enabled
+              {isNightTimeNow
                 ? 'Scale-to-Zero Active: Resumes at 6:00 AM'
                 : 'Auto-Pauses at 7:00 PM tonight'}
             </div>
@@ -1118,22 +1182,24 @@ export default function AdminPanel() {
               onClick={() => handleSaveSchedule({ is_scheduled_sleep: true })}
               style={{
                 flex: 1,
-                padding: '8px 12px',
-                borderRadius: '6px',
-                fontSize: '12px',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
                 fontWeight: '600',
-                background: 'rgba(234, 179, 8, 0.15)',
+                background: isNightTimeNow ? 'rgba(234, 179, 8, 0.35)' : 'rgba(234, 179, 8, 0.15)',
                 color: '#facc15',
-                border: '1px solid rgba(234, 179, 8, 0.4)',
+                border: isNightTimeNow ? '1px solid #facc15' : '1px solid rgba(234, 179, 8, 0.4)',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '6px'
+                gap: '8px',
+                transition: 'all 0.2s ease',
+                boxShadow: isNightTimeNow ? '0 0 12px rgba(250, 204, 21, 0.25)' : 'none'
               }}
             >
-              <Moon size={14} />
-              <span>Test Sleep Now</span>
+              <Moon size={16} />
+              <span>{isNightTimeNow ? '🌙 Sleep Mode Active' : 'Test Sleep Now'}</span>
             </button>
             <button
               type="button"
@@ -1143,24 +1209,41 @@ export default function AdminPanel() {
               }}
               style={{
                 flex: 1,
-                padding: '8px 12px',
-                borderRadius: '6px',
-                fontSize: '12px',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
                 fontWeight: '600',
-                background: 'rgba(74, 222, 128, 0.15)',
-                color: '#4ade80',
-                border: '1px solid rgba(74, 222, 128, 0.4)',
+                background: !isNightTimeNow ? 'rgba(74, 222, 128, 0.2)' : 'rgba(74, 222, 128, 0.12)',
+                color: !isNightTimeNow ? '#4ade80' : '#86efac',
+                border: !isNightTimeNow ? '1px solid #4ade80' : '1px solid rgba(74, 222, 128, 0.3)',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '6px'
+                gap: '8px',
+                transition: 'all 0.2s ease'
               }}
             >
-              <Sun size={14} />
+              <Sun size={16} />
               <span>Wake Display Now</span>
             </button>
           </div>
+
+          {scheduleFeedback && (
+            <div style={{
+              marginTop: '10px',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: '500',
+              background: scheduleFeedback.type === 'info' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(74, 222, 128, 0.15)',
+              color: scheduleFeedback.type === 'info' ? '#facc15' : '#4ade80',
+              border: scheduleFeedback.type === 'info' ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(74, 222, 128, 0.3)',
+              animation: 'fadeIn 0.2s ease'
+            }}>
+              {scheduleFeedback.message}
+            </div>
+          )}
 
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px', lineHeight: '1.4' }}>
             ⚡ <strong>Neon & Render Eco-Saver:</strong> Stops all database queries overnight so Neon scales to zero compute units and preserves yesterday's slide to resume at 6:00 AM!
@@ -1621,8 +1704,8 @@ export default function AdminPanel() {
                     key={sec}
                     type="button"
                     className={`interval-pill ${(canvaStatus?.connection?.poll_interval_seconds || 60) === sec
-                        ? 'active'
-                        : ''
+                      ? 'active'
+                      : ''
                       }`}
                     onClick={() => handleChangeSyncInterval(sec)}
                   >

@@ -109,7 +109,10 @@ export default function DisplayPlayer() {
     displayState?.schedule_start_time || '06:00',
     displayState?.schedule_end_time || '19:00'
   );
-  const isEffectiveSleep = manualSleepOverride || (scheduleEnabled && isNightSchedule && !manualWakeOverride);
+  const isEffectiveSleep =
+    manualSleepOverride ||
+    Boolean(displayState?.is_scheduled_sleep) ||
+    (scheduleEnabled && isNightSchedule && !manualWakeOverride);
 
   // Persist current slide index in local storage whenever it advances
   useEffect(() => {
@@ -557,9 +560,19 @@ export default function DisplayPlayer() {
     if (isEffectiveSleep) {
       setManualWakeOverride(true);
       setManualSleepOverride(false);
+      fetch(apiUrl('/api/display/schedule'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_scheduled_sleep: false })
+      }).catch(() => {});
     } else {
       setManualSleepOverride(true);
       setManualWakeOverride(false);
+      fetch(apiUrl('/api/display/schedule'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_scheduled_sleep: true })
+      }).catch(() => {});
     }
     handleUserActivity();
   };
@@ -678,6 +691,11 @@ export default function DisplayPlayer() {
                   onClick={() => {
                     setManualWakeOverride(true);
                     setManualSleepOverride(false);
+                    fetch(apiUrl('/api/display/schedule'), {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ is_scheduled_sleep: false })
+                    }).catch(() => {});
                   }}
                 >
                   <Sun size={18} />
