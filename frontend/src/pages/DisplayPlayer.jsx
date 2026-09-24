@@ -448,6 +448,11 @@ export default function DisplayPlayer() {
         }
       });
 
+      eventSource.addEventListener('RELOAD_DISPLAY', () => {
+        console.log('Received remote reload signal. Reloading display player...');
+        window.location.reload();
+      });
+
       eventSource.onopen = () => {
         setConnectionStatus(isPausedRef.current ? 'paused' : 'live');
       };

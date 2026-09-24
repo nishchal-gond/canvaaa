@@ -321,27 +321,49 @@ router.post('/schedule', async (req, res) => {
            schedule_start_time = $2,
            schedule_end_time = $3,
            is_scheduled_sleep = $4,
+           is_paused = CASE WHEN $4 = true THEN true ELSE false END,
            updated_at = NOW()
        WHERE id = 1`,
       [isEnabled, startTime, endTime, isSleep]
     );
 
     const payload = await getCurrentDisplayPayload(true);
+
+    // Broadcast both events to ensure all connected displays (new or cached) receive the state change
     sseBroadcaster.broadcast('SCHEDULE_CHANGED', payload);
+    sseBroadcaster.broadcast('DISPLAY_STATE_CHANGED', payload);
 
     res.json({
       success: true,
-      message: 'Display schedule configuration updated successfully.',
+      message: isSleep ? 'Displays put into sleep mode.' : 'Displays awakened.',
       schedule: {
         schedule_enabled: isEnabled,
         schedule_start_time: startTime,
         schedule_end_time: endTime,
-        is_scheduled_sleep: isSleep
+        is_scheduled_sleep: isSleep,
+        is_paused: isSleep
       },
       payload
     });
   } catch (err) {
     console.error('Error updating display schedule:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/display/reload
+ * Broadcasts RELOAD_DISPLAY to all connected screens to force them to reload their web page
+ */
+router.post('/reload', async (req, res) => {
+  try {
+    sseBroadcaster.broadcast('RELOAD_DISPLAY', { timestamp: Date.now() });
+    res.json({
+      success: true,
+      message: 'Reload signal broadcasted to all connected LG displays.'
+    });
+  } catch (err) {
+    console.error('Error broadcasting reload:', err);
     res.status(500).json({ error: err.message });
   }
 });

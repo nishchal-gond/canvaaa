@@ -797,6 +797,21 @@ export default function AdminPanel() {
     }
   };
 
+  const [isReloadingScreens, setIsReloadingScreens] = useState(false);
+  const handleRemoteReload = async () => {
+    setIsReloadingScreens(true);
+    try {
+      const res = await fetch(apiUrl('/api/display/reload'), { method: 'POST' });
+      if (res.ok) {
+        setScheduleFeedback({ type: 'success', message: '🔄 Remote reload signal broadcasted to all LG displays!' });
+      }
+    } catch (err) {
+      console.error('Failed to reload screens:', err);
+    } finally {
+      setTimeout(() => setIsReloadingScreens(false), 2000);
+    }
+  };
+
   const isNightTimeNow = (() => {
     if (scheduleForm.is_scheduled_sleep || displayState?.state?.is_scheduled_sleep) {
       return true;
@@ -874,6 +889,18 @@ export default function AdminPanel() {
           >
             <ChevronDown size={18} />
             <span>Scroll to Uploads & Slides</span>
+          </button>
+
+          <button
+            type="button"
+            className="display-link-btn"
+            style={{ cursor: 'pointer', background: isReloadingScreens ? 'rgba(197, 168, 128, 0.3)' : undefined }}
+            onClick={handleRemoteReload}
+            disabled={isReloadingScreens}
+            title="Remotely reload all connected LG screens to fetch the latest code"
+          >
+            <RefreshCw size={16} className={isReloadingScreens ? 'spin' : ''} />
+            <span>{isReloadingScreens ? 'Reloading...' : 'Reload Screens'}</span>
           </button>
 
           <a href="/display" target="_blank" rel="noreferrer" className="display-link-btn">
