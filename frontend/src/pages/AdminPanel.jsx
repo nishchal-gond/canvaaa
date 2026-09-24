@@ -44,6 +44,11 @@ export default function AdminPanel() {
   const [canvaStatus, setCanvaStatus] = useState(null);
   const [canvaVersions, setCanvaVersions] = useState([]);
   const [isCanvaSyncing, setIsCanvaSyncing] = useState(false);
+  const isCanvaSyncingRef = useRef(false);
+  useEffect(() => {
+    isCanvaSyncingRef.current = isCanvaSyncing;
+  }, [isCanvaSyncing]);
+
   const [canvaFeedback, setCanvaFeedback] = useState(null);
   const [showCanvaConfig, setShowCanvaConfig] = useState(false);
   const [showVersionsDrawer, setShowVersionsDrawer] = useState(false);
@@ -171,6 +176,35 @@ export default function AdminPanel() {
             auto_publish: data.connection.auto_publish !== false
           }));
         }
+
+        // Live backend sync state tracking
+        if (data.sync_state?.is_running) {
+          setIsCanvaSyncing(true);
+          setCanvaFeedback((prev) => {
+            if (!prev || prev.type === 'loading') {
+              return {
+                type: 'loading',
+                message: data.sync_state.message || 'Canva synchronization in progress...'
+              };
+            }
+            return prev;
+          });
+        } else if (isCanvaSyncingRef.current && data.sync_state?.is_running === false) {
+          setIsCanvaSyncing(false);
+          if (data.sync_state?.error) {
+            setCanvaFeedback({
+              type: 'error',
+              message: `❌ Canva sync error: ${data.sync_state.error}`
+            });
+          } else if (data.sync_state?.stage === 'completed') {
+            setCanvaFeedback({
+              type: 'success',
+              message: data.sync_state.message || '✅ Canva sync completed successfully!'
+            });
+            await loadPresentations();
+            await loadDisplayState();
+          }
+        }
       }
       if (versionsRes.ok) {
         const vData = await versionsRes.json();
@@ -181,7 +215,7 @@ export default function AdminPanel() {
     }
   };
 
-  // Manual Trigger: Sync From Canva
+  // Manual Trigger: Sync From Canva (Non-blocking async with live progress tracking)
   const handleSyncCanva = async (force = false) => {
     setIsCanvaSyncing(true);
     const chosenFormat = canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'mp4';
@@ -189,8 +223,8 @@ export default function AdminPanel() {
     setCanvaFeedback({
       type: 'loading',
       message: isVideo
-        ? 'Connecting to Canva API & rendering 4K MP4 Video...'
-        : 'Connecting to Canva API & rasterizing presentation slides...'
+        ? '⚡ Connecting to Canva API & starting 4K Video render...'
+        : '⚡ Connecting to Canva API & rasterizing presentation slides...'
     });
     try {
       const res = await fetch(apiUrl('/api/canva/sync'), {
@@ -200,39 +234,50 @@ export default function AdminPanel() {
           design_id: canvaStatus?.connection?.design_id || 'DAHVb9pmJzQ',
           force,
           format: chosenFormat,
-          auto_publish: canvaConfigForm.auto_publish !== false
+          auto_publish: canvaConfigForm.auto_publish !== false,
+          async: true
         })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Canva sync failed');
+      if (!res.ok) throw new Error(data.error || 'Canva sync request failed');
 
       if (data.already_up_to_date) {
+        setIsCanvaSyncing(false);
         setCanvaFeedback({
           type: 'info',
           message: '⚡ Canva design is already up to date. (Canva timestamp matches latest sync).'
         });
-      } else {
-        const isVideoSync = data.version?.export_format === 'MP4';
+      } else if (data.in_progress) {
+        // Job successfully queued/running in background
+        setIsCanvaSyncing(true);
         setCanvaFeedback({
-          type: 'success',
-          message: data.is_published
-            ? `🚀 Canva ${isVideoSync ? '4K Video' : 'Slides'} synced & published LIVE to display!`
-            : `✅ Synced Canva ${isVideoSync ? '4K Video' : 'Slides'} version ${data.version?.version_label || ''}!`
+          type: 'loading',
+          message: data.sync_state?.message || data.message || 'Canva 4K video rendering in progress. Screen will automatically update...'
         });
-        if (data.version?.presentation_id) {
-          await loadPresentations();
-          await loadPresentationDetails(data.version.presentation_id);
-          await loadDisplayState();
-        }
       }
       await loadCanvaStatus();
     } catch (err) {
+      // In case of a brief network timeout or server waking up, check if background sync is actively running
+      try {
+        const checkRes = await fetch(apiUrl('/api/canva/status'));
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          if (checkData.sync_state?.is_running) {
+            setIsCanvaSyncing(true);
+            setCanvaFeedback({
+              type: 'loading',
+              message: checkData.sync_state.message || 'Canva 4K video rendering in progress...'
+            });
+            return;
+          }
+        }
+      } catch {}
+
+      setIsCanvaSyncing(false);
       setCanvaFeedback({
         type: 'error',
         message: `❌ Canva sync error: ${err.message}`
       });
-    } finally {
-      setIsCanvaSyncing(false);
     }
   };
 
@@ -457,10 +502,50 @@ export default function AdminPanel() {
         }
       });
 
-      eventSource.addEventListener('CANVA_SYNC_COMPLETED', () => {
-        loadCanvaStatus();
-        loadPresentations();
-        setIsCanvaSyncing(false);
+      eventSource.addEventListener('CANVA_SYNC_PROGRESS', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setIsCanvaSyncing(true);
+          setCanvaFeedback({
+            type: 'loading',
+            message: `⏳ ${data.message || 'Canva sync in progress...'}`
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      });
+
+      eventSource.addEventListener('CANVA_SYNC_COMPLETED', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          loadCanvaStatus();
+          loadPresentations();
+          loadDisplayState();
+          setIsCanvaSyncing(false);
+          const isVideoSync = data.export_format === 'MP4' || data.media_type === 'video';
+          setCanvaFeedback({
+            type: 'success',
+            message: data.is_published
+              ? `🚀 Canva ${isVideoSync ? '4K Video' : 'Slides'} synced & published LIVE to display!`
+              : (data.message || `✅ Synced Canva ${isVideoSync ? '4K Video' : 'Slides'}!`)
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      });
+
+      eventSource.addEventListener('CANVA_SYNC_FAILED', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          loadCanvaStatus();
+          setIsCanvaSyncing(false);
+          setCanvaFeedback({
+            type: 'error',
+            message: `❌ Canva sync failed: ${data.error || 'Export failed'}`
+          });
+        } catch (err) {
+          console.error(err);
+        }
       });
 
       eventSource.addEventListener('CANVA_AUTO_SYNC_CHANGED', () => {

@@ -2,7 +2,8 @@ import { query } from '../config/db.js';
 import {
   getCanvaConnection,
   getCanvaDesignMetadata,
-  syncCanvaDesign
+  syncCanvaDesign,
+  getActiveSyncState
 } from './canvaService.js';
 import { sseBroadcaster } from './sseBroadcaster.js';
 
@@ -13,7 +14,7 @@ let isSyncing = false;
  * Executes a single check cycle for the Canva Auto-Sync background worker
  */
 async function checkCanvaForUpdates() {
-  if (isSyncing) return;
+  if (isSyncing || getActiveSyncState().is_running) return;
 
   try {
     const conn = await getCanvaConnection();

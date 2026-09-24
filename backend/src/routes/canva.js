@@ -11,7 +11,8 @@ import {
   getCanvaVersions,
   generateCanvaAuthUrl,
   exchangeCanvaAuthCode,
-  publishCanvaVersion
+  publishCanvaVersion,
+  getActiveSyncState
 } from '../services/canvaService.js';
 
 const router = express.Router();
@@ -118,7 +119,8 @@ router.get('/status', async (req, res) => {
     res.json({
       connection,
       latest_version: latestVersion,
-      canva_remote: canvaRemote
+      canva_remote: canvaRemote,
+      sync_state: getActiveSyncState()
     });
   } catch (err) {
     console.error('Error fetching Canva status:', err);
@@ -181,11 +183,43 @@ router.post('/connect', async (req, res) => {
 /**
  * POST /api/canva/sync
  * Manually triggers sync from Canva (exports MP4 Video or PDF slides and updates display)
+ * Non-blocking by default (returns HTTP 202) to prevent cloud reverse proxy timeouts
  */
 router.post('/sync', async (req, res) => {
-  const { design_id, force, format, auto_publish } = req.body;
+  const { design_id, force, format, auto_publish, async: isAsync = true } = req.body;
 
   try {
+    const currentSync = getActiveSyncState();
+    if (currentSync.is_running) {
+      return res.status(200).json({
+        success: true,
+        already_running: true,
+        in_progress: true,
+        message: currentSync.message || 'Canva sync is already running in background.',
+        sync_state: currentSync
+      });
+    }
+
+    if (isAsync !== false) {
+      // Execute asynchronously in background to prevent HTTP reverse proxy timeouts
+      syncCanvaDesign({
+        designId: design_id,
+        force: Boolean(force),
+        format: format || undefined,
+        autoPublish: typeof auto_publish === 'boolean' ? auto_publish : undefined
+      }).catch((bgErr) => {
+        console.error('[Async Canva Sync Background Error]:', bgErr);
+      });
+
+      return res.status(202).json({
+        success: true,
+        in_progress: true,
+        message: 'Canva synchronization started in background.',
+        sync_state: getActiveSyncState()
+      });
+    }
+
+    // Synchronous execution fallback if explicitly requested with { async: false }
     const result = await syncCanvaDesign({
       designId: design_id,
       force: Boolean(force),
