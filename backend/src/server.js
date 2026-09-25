@@ -79,6 +79,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Admin Password Verification
+app.post('/api/admin/verify', (req, res) => {
+  const { password } = req.body || {};
+  const masterPassword = (process.env.ADMIN_PASSWORD || 'lph2026').trim();
+  if (password && String(password).trim() === masterPassword) {
+    return res.json({ success: true, token: 'lph_admin_authenticated' });
+  }
+  return res.status(401).json({ success: false, error: 'Incorrect password' });
+});
+
 const server = app.listen(PORT, async () => {
   console.log(`====================================================`);
   console.log(`  Sales Display Backend Server Running`);

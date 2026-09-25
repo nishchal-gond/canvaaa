@@ -26,12 +26,13 @@ import {
   Moon,
   Sun,
   SkipBack,
-  SkipForward
+  SkipForward,
+  Lock
 } from 'lucide-react';
 import './AdminPanel.css';
 import { apiUrl, assetUrl, getApiBaseUrl, setApiBaseUrl } from '../config/api';
 
-export default function AdminPanel() {
+export default function AdminPanel({ onLock }) {
   const [displayState, setDisplayState] = useState(null);
   const [presentations, setPresentations] = useState([]);
   const [selectedPresentation, setSelectedPresentation] = useState(null);
@@ -908,6 +909,23 @@ export default function AdminPanel() {
             <span>Open LG Display Player</span>
             <ExternalLink size={14} />
           </a>
+
+          {onLock && (
+            <button
+              type="button"
+              className="display-link-btn lock-panel-btn"
+              onClick={onLock}
+              title="Lock Admin Panel and require password to re-enter"
+              style={{
+                borderColor: 'rgba(197, 168, 128, 0.35)',
+                color: 'var(--accent-gold)',
+                background: 'rgba(197, 168, 128, 0.08)'
+              }}
+            >
+              <Lock size={16} />
+              <span>Lock Admin</span>
+            </button>
+          )}
         </div>
       </header>
 
