@@ -12,7 +12,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import './DisplayPlayer.css';
-import { apiUrl, assetUrl } from '../config/api';
+import { apiUrl, assetUrl, CLOUD_BACKEND_URL } from '../config/api';
 import { saveSlideBlob, getSlideBlob, saveSignageMeta, getSignageMeta } from '../utils/offlineCache';
 
 /**
@@ -773,6 +773,13 @@ export default function DisplayPlayer() {
             }}
             onError={(e) => {
               console.warn('Video element error:', e);
+              if (!e.target.dataset.cloudFallback && !e.target.src.includes('onrender.com') && displayState?.media_url) {
+                e.target.dataset.cloudFallback = '1';
+                const cleanPath = displayState.media_url.startsWith('/') ? displayState.media_url : `/${displayState.media_url}`;
+                e.target.src = `${CLOUD_BACKEND_URL}${cleanPath}`;
+                e.target.load();
+                e.target.play().catch(() => {});
+              }
             }}
           />
         ) : (
@@ -788,6 +795,10 @@ export default function DisplayPlayer() {
                 onError={(e) => {
                   if (slide.blobUrl && e.target.src !== slide.blobUrl) {
                     e.target.src = slide.blobUrl;
+                  } else if (!e.target.dataset.cloudFallback && !e.target.src.includes('onrender.com')) {
+                    e.target.dataset.cloudFallback = '1';
+                    const cleanPath = slide.image_path.startsWith('/') ? slide.image_path : `/${slide.image_path}`;
+                    e.target.src = `${CLOUD_BACKEND_URL}${cleanPath}`;
                   } else if (!e.target.dataset.retried) {
                     e.target.dataset.retried = '1';
                     setTimeout(() => {
