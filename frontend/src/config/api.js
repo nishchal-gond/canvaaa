@@ -22,9 +22,15 @@ export function getApiBaseUrl() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const trimmed = saved.trim().replace(/\/$/, '');
-      // Purge dead temporary tunnels or localhost from localStorage
-      if (trimmed.includes('trycloudflare.com') || (window.location.hostname.includes('vercel.app') && trimmed.includes('localhost'))) {
+      // Purge old suspended Render backend, dead tunnels, or localhost from localStorage
+      if (
+        trimmed.includes('canvaaa-p0f3.onrender.com') ||
+        trimmed.includes('trycloudflare.com') ||
+        (window.location.hostname.includes('vercel.app') && trimmed.includes('localhost'))
+      ) {
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('lph_cached_state');
+        localStorage.removeItem('lph_cached_slides');
       } else if (window.location.protocol === 'https:' && trimmed.startsWith('http://')) {
         // If page is on HTTPS, ignore insecure HTTP URLs (prevents browser Mixed Content blocking)
         localStorage.removeItem(STORAGE_KEY);
