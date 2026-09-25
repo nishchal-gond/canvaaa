@@ -1,6 +1,6 @@
 // Centralized API configuration helper for local & live deployments
 const STORAGE_KEY = 'lph_backend_api_url';
-export const CLOUD_BACKEND_URL = 'https://canvaaa-p0f3.onrender.com';
+export const CLOUD_BACKEND_URL = 'https://canvaaa-9gc6.onrender.com';
 
 export function getApiBaseUrl() {
   if (typeof window !== 'undefined') {
