@@ -445,10 +445,8 @@ export default function AdminPanel({ onLock }) {
         type: 'loading',
         message: 'Connecting to Canva OAuth 2.0 authorization server...'
       });
-      const isCloud = window.location.hostname.includes('vercel.app');
-      const redirectParam = isCloud
-        ? encodeURIComponent('https://canvaaa-p0f3.onrender.com/api/canva/callback')
-        : '';
+      const redirectUri = apiUrl('/api/canva/callback');
+      const redirectParam = encodeURIComponent(redirectUri);
       const clientIdParam = canvaConfigForm.client_id
         ? encodeURIComponent(canvaConfigForm.client_id.trim())
         : '';
@@ -1387,12 +1385,12 @@ export default function AdminPanel({ onLock }) {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <code style={{ background: '#09090b', padding: '6px 10px', borderRadius: '5px', flex: 1, color: '#4ade80', fontSize: '12px', border: '1px solid rgba(255,255,255,0.1)', wordBreak: 'break-all' }}>
-                    https://canvaaa-p0f3.onrender.com/api/canva/callback
+                    {apiUrl('/api/canva/callback')}
                   </code>
                   <button
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText('https://canvaaa-p0f3.onrender.com/api/canva/callback');
+                      navigator.clipboard.writeText(apiUrl('/api/canva/callback'));
                       setCanvaFeedback({ type: 'success', message: '📋 Copied Canva Redirect URL to clipboard!' });
                     }}
                     style={{ background: '#7d2ae8', color: '#fff', border: 'none', borderRadius: '5px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: '700', whiteSpace: 'nowrap' }}

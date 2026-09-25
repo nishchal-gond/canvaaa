@@ -24,19 +24,11 @@ const router = express.Router();
 router.get('/auth/start', async (req, res) => {
   try {
     const { redirect_uri, client_id } = req.query;
-    const isLive = req.get('host')?.includes('onrender.com') || process.env.NODE_ENV === 'production';
-    const defaultRedirect = isLive
-      ? 'https://canvaaa-p0f3.onrender.com/api/canva/callback'
-      : `${req.protocol}://${req.get('host')}/api/canva/callback`;
+    const host = req.get('x-forwarded-host') || req.get('host') || 'canvaaa-9gc6.onrender.com';
+    const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : req.protocol) || 'https';
+    const defaultRedirect = `${proto}://${host}/api/canva/callback`;
 
-    let targetRedirect = redirect_uri;
-    if (!targetRedirect) {
-      if (isLive) {
-        targetRedirect = 'https://canvaaa-p0f3.onrender.com/api/canva/callback';
-      } else {
-        targetRedirect = process.env.CANVA_REDIRECT_URI || defaultRedirect;
-      }
-    }
+    let targetRedirect = redirect_uri || process.env.CANVA_REDIRECT_URI || defaultRedirect;
     const { auth_url, state, redirect_uri: finalUri } = await generateCanvaAuthUrl(targetRedirect, client_id);
     res.json({
       success: true,
@@ -69,9 +61,9 @@ router.get('/callback', async (req, res) => {
   }
 
   try {
-    const defaultRedirect = isLive
-      ? 'https://canvaaa-p0f3.onrender.com/api/canva/callback'
-      : `${req.protocol}://${req.get('host')}/api/canva/callback`;
+    const host = req.get('x-forwarded-host') || req.get('host') || 'canvaaa-9gc6.onrender.com';
+    const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : req.protocol) || 'https';
+    const defaultRedirect = `${proto}://${host}/api/canva/callback`;
 
     const updated = await exchangeCanvaAuthCode({
       code,
