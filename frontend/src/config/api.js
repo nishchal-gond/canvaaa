@@ -76,6 +76,6 @@ export function assetUrl(path) {
   let base = getApiBaseUrl();
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   // Easypanel streams images at ~10KB/s direct; Vercel's /uploads rewrite (vercel.json) is ~100x faster.
-  if (base === CLOUD_BACKEND_URL && window.location.hostname.includes('vercel.app')) base = '';
+  if (base.includes('easypanel.host') && window.location.hostname.includes('vercel.app')) base = '';
   return base ? `${base}${cleanPath}` : cleanPath;
 }
