@@ -49,7 +49,7 @@ async function checkCanvaForUpdates() {
       try {
         const syncResult = await syncCanvaDesign({
           designId,
-          format: conn.export_format || 'mp4',
+          format: conn.export_format || 'pdf',
           autoPublish: conn.auto_publish !== false
         });
         console.log(`[AutoSync] ✅ Automated sync successful: ${syncResult.message}`);

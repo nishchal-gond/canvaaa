@@ -72,7 +72,7 @@ export default function AdminPanel({ onLock }) {
     design_id: 'DAHVb9pmJzQ',
     design_title: 'Copy of Dashboard Screen 16/9',
     access_token: '',
-    export_format: 'mp4',
+    export_format: 'pdf',
     auto_publish: true,
     simulation_mode: false
   });
@@ -202,7 +202,7 @@ export default function AdminPanel({ onLock }) {
             client_secret: data.connection.client_secret_masked || prev.client_secret || '',
             design_id: data.connection.design_id || 'DAHVb9pmJzQ',
             design_title: data.connection.design_title || 'Copy of Dashboard Screen 16/9',
-            export_format: data.connection.export_format || 'mp4',
+            export_format: data.connection.export_format || 'pdf',
             auto_publish: data.connection.auto_publish !== false
           }));
         }
@@ -248,7 +248,7 @@ export default function AdminPanel({ onLock }) {
   // Manual Trigger: Sync From Canva (Non-blocking async with live progress tracking)
   const handleSyncCanva = async (force = false) => {
     setIsCanvaSyncing(true);
-    const chosenFormat = canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'mp4';
+    const chosenFormat = canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'pdf';
     const isVideo = chosenFormat === 'mp4';
     setCanvaFeedback({
       type: 'loading',
@@ -1449,7 +1449,7 @@ export default function AdminPanel({ onLock }) {
               <div className="config-field">
                 <label>Export Format</label>
                 <select
-                  value={canvaConfigForm.export_format || 'mp4'}
+                  value={canvaConfigForm.export_format || 'pdf'}
                   onChange={(e) =>
                     setCanvaConfigForm({ ...canvaConfigForm, export_format: e.target.value })
                   }
@@ -1636,43 +1636,19 @@ export default function AdminPanel({ onLock }) {
         {/* Primary Action Row: SYNC, PUBLISH, AUTO-SYNC */}
         <div className="canva-actions-strip">
           <div className="canva-action-buttons">
-            {/* Format Mode Selector: 4K Video vs Slides */}
+            {/* Format Mode Selector: Slides (DEFAULT) vs 4K Video */}
             <div style={{ display: 'inline-flex', alignItems: 'center', background: '#121215', borderRadius: '8px', padding: '3px', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <button
-                type="button"
-                onClick={() => handleSwitchFormat('mp4')}
-                style={{
-                  background: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'mp4') === 'mp4'
-                    ? 'linear-gradient(135deg, #7d2ae8 0%, #00c4cc 100%)'
-                    : 'transparent',
-                  color: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'mp4') === 'mp4' ? '#fff' : '#a1a1aa',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '7px 12px',
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s ease'
-                }}
-                title="Export as native 4K looping video (Default for digital signage)"
-              >
-                <span>🎬 4K Video</span>
-                <span style={{ fontSize: '9px', background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: '4px' }}>DEFAULT</span>
-              </button>
               <button
                 type="button"
                 onClick={() => handleSwitchFormat('pdf')}
                 style={{
-                  background: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format) === 'pdf'
+                  background: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'pdf') === 'pdf'
                     ? 'rgba(212, 175, 55, 0.25)'
                     : 'transparent',
-                  color: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format) === 'pdf'
+                  color: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'pdf') === 'pdf'
                     ? 'var(--accent-gold)'
                     : '#a1a1aa',
-                  border: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format) === 'pdf'
+                  border: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format || 'pdf') === 'pdf'
                     ? '1px solid var(--accent-gold)'
                     : 'none',
                   borderRadius: '6px',
@@ -1685,9 +1661,33 @@ export default function AdminPanel({ onLock }) {
                   gap: '6px',
                   transition: 'all 0.2s ease'
                 }}
-                title="Export as multi-slide carousel"
+                title="Export as fast, lightweight multi-slide carousel (Recommended: ~10x less bandwidth & storage)"
               >
                 <span>📄 Slides (PDF)</span>
+                <span style={{ fontSize: '9px', background: 'rgba(212, 175, 55, 0.3)', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>DEFAULT</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSwitchFormat('mp4')}
+                style={{
+                  background: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format) === 'mp4'
+                    ? 'linear-gradient(135deg, #7d2ae8 0%, #00c4cc 100%)'
+                    : 'transparent',
+                  color: (canvaStatus?.connection?.export_format || canvaConfigForm.export_format) === 'mp4' ? '#fff' : '#a1a1aa',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '7px 12px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
+                }}
+                title="Export as native 4K looping video"
+              >
+                <span>🎬 4K Video</span>
               </button>
             </div>
 

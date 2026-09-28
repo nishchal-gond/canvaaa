@@ -224,7 +224,7 @@ export async function getCanvaConnection() {
     client_secret_masked: hasSecret ? '••••••••••••••••' : null,
     has_token: hasToken,
     access_token_masked: hasToken ? '••••••••••••••••' : null,
-    export_format: conn.export_format || 'mp4',
+    export_format: conn.export_format || 'pdf',
     auto_publish: conn.auto_publish !== false
   };
 }
@@ -574,8 +574,8 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false,
     };
   }
 
-  // Format defaults to 'mp4' for dynamic video signage
-  const requestedFormat = (format || conn.export_format || 'mp4').toLowerCase();
+  // Format defaults to 'pdf' for fast lightweight slide signage and low storage
+  const requestedFormat = (format || conn.export_format || 'pdf').toLowerCase();
   const shouldAutoPublish = typeof autoPublish === 'boolean' ? autoPublish : (conn.auto_publish !== false);
 
   activeSyncState = {
