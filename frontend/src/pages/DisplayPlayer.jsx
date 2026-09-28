@@ -187,6 +187,20 @@ export default function DisplayPlayer() {
     }
   }, [isEffectiveSleep]);
 
+  // Auto-reload when a new frontend build is deployed (unattended sales-floor screen)
+  useEffect(() => {
+    const current = document.querySelector('script[type="module"][src*="/assets/"]')?.getAttribute('src');
+    if (!current) return; // dev server: no hashed bundle
+    const id = setInterval(async () => {
+      try {
+        const html = await (await fetch('/', { cache: 'no-store' })).text();
+        const latest = html.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
+        if (latest && latest !== current) window.location.reload();
+      } catch {}
+    }, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
   // Track fullscreen changes across all browsers
   useEffect(() => {
     const handleFsChange = () => {
@@ -206,28 +220,59 @@ export default function DisplayPlayer() {
     };
   }, []);
 
-  // Hydrate slide list with offline IndexedDB Blobs
-  const hydrateSlidesWithBlobs = async (slideList) => {
+  // Hydrate slide list with offline IndexedDB Blobs progressively without choking bandwidth
+  const hydrateSlidesWithBlobs = async (slideList, activeIdx = 0) => {
     if (!Array.isArray(slideList) || slideList.length === 0) return slideList;
-    return Promise.all(
+
+    // 1. Immediately attach any already-cached blobs from IndexedDB
+    const result = await Promise.all(
       slideList.map(async (slide) => {
         const key = `slide_${slide.id}`;
-        let blob = await getSlideBlob(key);
-        if (!blob) {
-          try {
-            const res = await fetch(assetUrl(slide.image_path));
-            if (res.ok) {
-              blob = await res.blob();
-              await saveSlideBlob(key, blob);
-            }
-          } catch {}
-        }
+        const blob = await getSlideBlob(key);
         return {
           ...slide,
           blobUrl: blob ? URL.createObjectURL(blob) : null
         };
       })
     );
+
+    // 2. Prioritize background caching: active slide first, next slide, then rest
+    const queue = [];
+    const n = slideList.length;
+    if (n > 0) {
+      const p1 = activeIdx % n;
+      const p2 = (activeIdx + 1) % n;
+      queue.push(p1);
+      if (p2 !== p1) queue.push(p2);
+      for (let i = 0; i < n; i++) {
+        if (i !== p1 && i !== p2) queue.push(i);
+      }
+    }
+
+    // Background progressive cache worker (gentle sequential downloads)
+    (async () => {
+      for (const idx of queue) {
+        const slide = slideList[idx];
+        if (!slide) continue;
+        const key = `slide_${slide.id}`;
+        const existing = await getSlideBlob(key);
+        if (!existing && slide.image_path) {
+          try {
+            const res = await fetch(assetUrl(slide.image_path));
+            if (res.ok) {
+              const blob = await res.blob();
+              await saveSlideBlob(key, blob);
+              setSlides((prev) =>
+                prev.map((s, i) => (i === idx ? { ...s, blobUrl: URL.createObjectURL(blob) } : s))
+              );
+            }
+          } catch {}
+          await new Promise((r) => setTimeout(r, 150));
+        }
+      }
+    })();
+
+    return result;
   };
 
   // Process incoming display payload from API, SSE, or offline cache
@@ -300,7 +345,7 @@ export default function DisplayPlayer() {
           } catch {}
         }
 
-        hydrateSlidesWithBlobs(payload.slides)
+        hydrateSlidesWithBlobs(payload.slides, isNewPres ? 0 : (currentSlideIndexRef.current || 0))
           .then((hydrated) => {
             if (hydrated && Array.isArray(hydrated) && hydrated.length > 0) {
               setSlides(hydrated);
@@ -334,7 +379,7 @@ export default function DisplayPlayer() {
     (async () => {
       const cachedMetaSlides = await getSignageMeta('cached_slides');
       if (cachedMetaSlides && cachedMetaSlides.length > 0 && slidesRef.current.length === 0) {
-        const hydrated = await hydrateSlidesWithBlobs(cachedMetaSlides);
+        const hydrated = await hydrateSlidesWithBlobs(cachedMetaSlides, currentSlideIndexRef.current || 0);
         setSlides(hydrated);
       }
     })();
@@ -791,7 +836,14 @@ export default function DisplayPlayer() {
                 src={slide.blobUrl || assetUrl(slide.image_path)}
                 alt=""
                 className={`slide-layer ${idx === currentSlideIndex ? 'active' : ''}`}
-                loading={idx <= 1 ? 'eager' : 'lazy'}
+                loading={
+                  Math.abs(idx - currentSlideIndex) <= 1 ||
+                  (currentSlideIndex === slides.length - 1 && idx === 0) ||
+                  idx <= 1
+                    ? 'eager'
+                    : 'lazy'
+                }
+                decoding="async"
                 onError={(e) => {
                   if (slide.blobUrl && e.target.src !== slide.blobUrl) {
                     e.target.src = slide.blobUrl;
