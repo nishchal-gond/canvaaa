@@ -830,7 +830,13 @@ export default function DisplayPlayer() {
         ) : (
           /* 4. Dynamic Presentation Slides */
           <>
-            {slides.map((slide, idx) => (
+            {slides.map((slide, idx) => {
+              // Only mount prev/current/next: 30 stacked 1080p layers exhaust TV GPU memory
+              // (LG webOS browser then paints just the top tiles, rest black).
+              const n = slides.length;
+              const d = (idx - currentSlideIndex + n) % n;
+              if (d > 1 && d !== n - 1) return null;
+              return (
               <img
                 key={slide.id || idx}
                 src={slide.blobUrl || assetUrl(slide.image_path)}
@@ -860,7 +866,8 @@ export default function DisplayPlayer() {
                   }
                 }}
               />
-            ))}
+              );
+            })}
 
             {/* Bottom Slide Progress Line */}
             {slides.length > 1 && !isPaused && !isEffectiveSleep && (
