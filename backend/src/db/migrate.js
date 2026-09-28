@@ -36,6 +36,7 @@ export async function runMigrations() {
 
     ALTER TABLE slides ADD COLUMN IF NOT EXISTS width INT DEFAULT 1920;
     ALTER TABLE slides ADD COLUMN IF NOT EXISTS height INT DEFAULT 1080;
+    ALTER TABLE slides ADD COLUMN IF NOT EXISTS thumbnail_path VARCHAR(500);
 
     CREATE TABLE IF NOT EXISTS display_state (
       id INT PRIMARY KEY DEFAULT 1,

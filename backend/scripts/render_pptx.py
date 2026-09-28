@@ -58,15 +58,27 @@ def render_pptx_with_libreoffice(pptx_path, output_dir):
             mat = pymupdf.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat, alpha=False)
 
-            filename = f"slide_{i + 1}.png"
+            filename = f"slide_{i + 1}.jpg"
             out_file = os.path.join(output_dir, filename)
-            pix.save(out_file)
+            pix.save(out_file, output="jpg", jpg_quality=92)
+
+            # Thumbnail for preview grid
+            thumb_dir = os.path.join(output_dir, "thumbs")
+            os.makedirs(thumb_dir, exist_ok=True)
+            thumb_scale = 480.0 / width_pts if width_pts > 0 else 0.5
+            thumb_mat = pymupdf.Matrix(thumb_scale, thumb_scale)
+            thumb_pix = page.get_pixmap(matrix=thumb_mat, alpha=False)
+            thumb_filename = f"slide_{i + 1}.jpg"
+            thumb_pix.save(os.path.join(thumb_dir, thumb_filename), output="jpg", jpg_quality=82)
 
             slides.append({
                 "slide_index": i + 1,
                 "filename": filename,
+                "thumb_filename": f"thumbs/{thumb_filename}",
                 "width": pix.width,
-                "height": pix.height
+                "height": pix.height,
+                "thumb_width": thumb_pix.width,
+                "thumb_height": thumb_pix.height
             })
 
         doc.close()

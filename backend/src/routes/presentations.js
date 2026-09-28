@@ -227,17 +227,21 @@ router.post('/upload', upload.single('presentation'), async (req, res) => {
       // Insert slide records
       for (const slide of renderResult.slides) {
         const relativeImagePath = `/uploads/slides/${presentationId}/${slide.filename}`;
+        const relativeThumbPath = slide.thumb_filename
+          ? `/uploads/slides/${presentationId}/${slide.thumb_filename}`
+          : relativeImagePath;
+
         const sRes = await query(
-          `INSERT INTO slides (presentation_id, slide_index, image_path, width, height)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, slide_index, image_path, width, height, created_at`,
-          [presentationId, slide.slide_index, relativeImagePath, slide.width, slide.height]
+          `INSERT INTO slides (presentation_id, slide_index, image_path, thumbnail_path, width, height)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, slide_index, image_path, thumbnail_path, width, height, created_at`,
+          [presentationId, slide.slide_index, relativeImagePath, relativeThumbPath, slide.width, slide.height]
         );
         slideRows.push(sRes.rows[0]);
       }
 
       if (slideRows.length > 0) {
-        thumbnailUrl = slideRows[0].image_path;
+        thumbnailUrl = slideRows[0].thumbnail_path || slideRows[0].image_path;
         await query(`UPDATE presentations SET thumbnail_url = $1 WHERE id = $2`, [thumbnailUrl, presentationId]);
       }
 
@@ -366,7 +370,7 @@ router.get('/:id', async (req, res) => {
     }
 
     const slidesResult = await query(
-      `SELECT id, slide_index, image_path, width, height FROM slides
+      `SELECT id, slide_index, image_path, thumbnail_path, width, height FROM slides
        WHERE presentation_id = $1
        ORDER BY slide_index ASC`,
       [req.params.id]

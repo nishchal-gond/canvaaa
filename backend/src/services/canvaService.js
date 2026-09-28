@@ -788,17 +788,21 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false,
 
       for (const slide of renderResult.slides) {
         const relativeImagePath = `/uploads/slides/${presentationId}/${slide.filename}`;
+        const relativeThumbPath = slide.thumb_filename
+          ? `/uploads/slides/${presentationId}/${slide.thumb_filename}`
+          : relativeImagePath;
+
         const sRes = await query(
-          `INSERT INTO slides (presentation_id, slide_index, image_path, width, height)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, slide_index, image_path, width, height, created_at`,
-          [presentationId, slide.slide_index, relativeImagePath, slide.width, slide.height]
+          `INSERT INTO slides (presentation_id, slide_index, image_path, thumbnail_path, width, height)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, slide_index, image_path, thumbnail_path, width, height, created_at`,
+          [presentationId, slide.slide_index, relativeImagePath, relativeThumbPath, slide.width, slide.height]
         );
         slideRows.push(sRes.rows[0]);
       }
 
       if (slideRows.length > 0) {
-        const thumbnailUrl = slideRows[0].image_path;
+        const thumbnailUrl = slideRows[0].thumbnail_path || slideRows[0].image_path;
         await query('UPDATE presentations SET thumbnail_url = $1 WHERE id = $2', [thumbnailUrl, presentationId]);
       }
     }

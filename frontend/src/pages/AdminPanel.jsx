@@ -30,7 +30,7 @@ import {
   Lock
 } from 'lucide-react';
 import './AdminPanel.css';
-import { apiUrl, assetUrl, getApiBaseUrl, setApiBaseUrl } from '../config/api';
+import { apiUrl, assetUrl, getApiBaseUrl, setApiBaseUrl, CLOUD_BACKEND_URL } from '../config/api';
 
 export default function AdminPanel({ onLock }) {
   const [displayState, setDisplayState] = useState(null);
@@ -1983,12 +1983,27 @@ export default function AdminPanel({ onLock }) {
                   <div key={slide.id} className="slide-thumbnail-box">
                     <span className="slide-number-badge">Slide {slide.slide_index}</span>
                     <img
-                      src={assetUrl(slide.image_path)}
+                      src={assetUrl(slide.thumbnail_path || slide.image_path)}
                       alt=""
                       className="slide-thumbnail-img"
                       loading="lazy"
                       onError={(e) => {
-                        e.target.style.opacity = '0';
+                        const targetPath = slide.thumbnail_path || slide.image_path;
+                        if (!e.target.dataset.easypanelRetried && targetPath) {
+                          e.target.dataset.easypanelRetried = '1';
+                          const cleanPath = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
+                          e.target.src = `${CLOUD_BACKEND_URL}${cleanPath}`;
+                        } else if (!e.target.dataset.fallbackFull && slide.image_path && targetPath !== slide.image_path) {
+                          // Fallback to full image if thumbnail is missing
+                          e.target.dataset.fallbackFull = '1';
+                          e.target.src = assetUrl(slide.image_path);
+                        } else if (!e.target.dataset.retried && targetPath) {
+                          e.target.dataset.retried = '1';
+                          setTimeout(() => {
+                            const sep = targetPath.includes('?') ? '&' : '?';
+                            e.target.src = assetUrl(targetPath) + sep + '_t=' + Date.now();
+                          }, 1000);
+                        }
                       }}
                     />
                     <button

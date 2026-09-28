@@ -55,7 +55,7 @@ export async function getCurrentDisplayPayload(forceRefresh = false) {
   let slides = [];
   if (state.active_presentation_id && state.media_type !== 'video') {
     const slidesResult = await query(
-      `SELECT id, slide_index, image_path, width, height
+      `SELECT id, slide_index, image_path, thumbnail_path, width, height
        FROM slides
        WHERE presentation_id = $1
        ORDER BY slide_index ASC`,
