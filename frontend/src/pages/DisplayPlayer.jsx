@@ -564,7 +564,19 @@ export default function DisplayPlayer() {
       return;
     }
 
-    const intervalMs = Math.max(2, rotationInterval || 10) * 1000;
+    const currentSlide = slides[currentSlideIndex];
+    const isSlide4 = (currentSlide?.slide_index === 4) || (currentSlideIndex === 3);
+    const baseInterval = Math.max(2, rotationInterval || 8);
+    const slide4Duration = Number(displayState?.slide_4_duration) || 25;
+
+    // Slide 4 stays for a longer time (25 seconds default), other slides rotate faster at base speed (8-10s)
+    const slideDurationSec = (currentSlide && currentSlide.duration)
+      ? Number(currentSlide.duration)
+      : isSlide4
+      ? slide4Duration
+      : baseInterval;
+
+    const intervalMs = slideDurationSec * 1000;
     const tickMs = 100;
     let startTime = Date.now();
 
@@ -572,7 +584,6 @@ export default function DisplayPlayer() {
       const now = Date.now();
       const elapsed = now - startTime;
       if (elapsed >= intervalMs) {
-        startTime = Date.now();
         setCurrentSlideIndex((prev) => (prev + 1) % slides.length);
         setProgress(0);
       } else {
@@ -581,7 +592,7 @@ export default function DisplayPlayer() {
     }, tickMs);
 
     return () => clearInterval(timer);
-  }, [slides.length, rotationInterval, isPaused, isEffectiveSleep, displayState?.media_type]);
+  }, [slides, currentSlideIndex, rotationInterval, displayState?.slide_4_duration, isPaused, isEffectiveSleep, displayState?.media_type]);
 
   // User activity tracker: shows controls on mouse movement, touch, or keypress
   const handleUserActivity = () => {
@@ -787,13 +798,21 @@ export default function DisplayPlayer() {
               </div>
             </div>
           </div>
-        ) : !hasContent ? (
-          /* 2. Empty State Awaiting Presentation */
-          <div className="display-empty-state">
-            <img src="/lph-logo.png" alt="LPH Luxury Properties Hub" className="empty-logo-img" />
-            <div className="empty-help">
-              Awaiting Presentation or Video. Open <strong>/admin</strong> to upload and publish.
-            </div>
+        ) : (!hasContent || isPaused) ? (
+          /* 2. Paused or Empty / Idle State: Show LPH Brand Cover Sheet (slide_p1.png) */
+          <div className="display-main-sheet-view" style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
+            <img
+              src="/slide_p1.png"
+              alt="LPH Luxury Properties Hub"
+              className="slide-layer active"
+              style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: 1, zIndex: 10, backgroundColor: '#000' }}
+              onError={(e) => {
+                if (!e.target.dataset.fallback) {
+                  e.target.dataset.fallback = '1';
+                  e.target.src = assetUrl('/uploads/slide_p1.png');
+                }
+              }}
+            />
           </div>
         ) : isVideo ? (
           /* 3. Native 4K Video Playback */
@@ -955,7 +974,7 @@ export default function DisplayPlayer() {
         )}
 
         {/* 6. Live Signage Status Badge - hidden in fullscreen */}
-        {!isFullscreen && !isEffectiveSleep && (
+        {!isFullscreen && !isEffectiveSleep && hasContent && !isPaused && (
           <div className="signage-badge">
             <div
               className={`status-dot ${

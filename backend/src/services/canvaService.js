@@ -202,15 +202,37 @@ export async function refreshCanvaToken(refreshToken) {
 /**
  * Retrieves the stored Canva connection settings from Neon PostgreSQL
  */
+export function parsePagesRange(rangeStr) {
+  if (!rangeStr || typeof rangeStr !== 'string') return null;
+  const trimmed = rangeStr.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'all') return null;
+  const pages = new Set();
+  const parts = trimmed.split(/[,;\s]+/);
+  for (const part of parts) {
+    if (!part) continue;
+    if (part.includes('-')) {
+      const [start, end] = part.split('-').map(Number);
+      if (!isNaN(start) && !isNaN(end) && start > 0 && end >= start) {
+        for (let i = start; i <= end; i++) pages.add(i);
+      }
+    } else {
+      const num = Number(part);
+      if (!isNaN(num) && num > 0) pages.add(num);
+    }
+  }
+  return pages.size > 0 ? Array.from(pages).sort((a, b) => a - b) : null;
+}
+
 export async function getCanvaConnection() {
   const res = await query('SELECT * FROM canva_connections WHERE id = 1');
   const conn = res.rows[0] || {
     id: 1,
-    design_id: 'DAHVb9pmJzQ',
-    design_title: 'Copy of Dashboard Screen 16/9',
+    design_id: 'DAHWvoM1AxQ',
+    design_title: 'dashboard Screen 01/10',
     status: 'disconnected',
     auto_sync_enabled: false,
-    poll_interval_seconds: 60
+    poll_interval_seconds: 60,
+    pages_to_sync: '1-5'
   };
 
   // Mask access token and secret for safety
@@ -225,7 +247,8 @@ export async function getCanvaConnection() {
     has_token: hasToken,
     access_token_masked: hasToken ? '••••••••••••••••' : null,
     export_format: conn.export_format || 'pdf',
-    auto_publish: conn.auto_publish !== false
+    auto_publish: conn.auto_publish !== false,
+    pages_to_sync: conn.pages_to_sync || '1-5'
   };
 }
 
@@ -248,7 +271,8 @@ export async function updateCanvaConnection(fields) {
     'last_published_at',
     'status',
     'export_format',
-    'auto_publish'
+    'auto_publish',
+    'pages_to_sync'
   ];
 
   const updates = [];
@@ -279,11 +303,11 @@ async function getEffectiveToken() {
   const dbToken = row?.access_token;
   if (row?.status === 'simulated' || dbToken === 'simulation') return 'simulation';
 
-  // Auto-refresh token if within 5 minutes of expiring
-  if (row?.refresh_token && row?.token_expires_at) {
-    const expiresTime = new Date(row.token_expires_at).getTime();
-    if (Date.now() >= expiresTime - 5 * 60 * 1000) {
-      console.log('[Canva Token] Token expired or nearing expiration. Auto-refreshing...');
+  // Auto-refresh token if missing or within 5 minutes of expiring
+  if (row?.refresh_token) {
+    const expiresTime = row.token_expires_at ? new Date(row.token_expires_at).getTime() : 0;
+    if (!dbToken || Date.now() >= expiresTime - 5 * 60 * 1000) {
+      console.log('[Canva Token] Token missing or nearing expiration. Auto-refreshing...');
       try {
         const refreshed = await refreshCanvaToken(row.refresh_token);
         return refreshed.access_token;
@@ -372,7 +396,7 @@ export async function getCanvaDesignMetadata(designId) {
  * 2. Create Design Export Job
  * Calls Canva Connect API: POST /v1/exports
  */
-export async function createCanvaExportJob(designId, format = 'mp4', quality = 'horizontal_4k') {
+export async function createCanvaExportJob(designId, format = 'mp4', quality = 'horizontal_4k', pages = null) {
   const token = await getEffectiveToken();
   if (!token) throw new Error('Missing Canva API Access Token');
 
@@ -381,32 +405,36 @@ export async function createCanvaExportJob(designId, format = 'mp4', quality = '
     formatObj.quality = quality || 'horizontal_4k';
   }
 
+  const exportPayload = {
+    design_id: designId,
+    format: formatObj
+  };
+
+  if (Array.isArray(pages) && pages.length > 0) {
+    exportPayload.pages = pages;
+  }
+
   let res = await fetch(`${CANVA_API_BASE}/exports`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      design_id: designId,
-      format: formatObj
-    })
+    body: JSON.stringify(exportPayload)
   });
 
   // If 4K is rejected by Canva API, automatically fall back to horizontal_1080p
   if (!res.ok && format === 'mp4' && formatObj.quality === 'horizontal_4k') {
     console.warn(`[Canva Export] 4K export returned ${res.status}. Falling back to horizontal_1080p...`);
     formatObj.quality = 'horizontal_1080p';
+    exportPayload.format = formatObj;
     res = await fetch(`${CANVA_API_BASE}/exports`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        design_id: designId,
-        format: formatObj
-      })
+      body: JSON.stringify(exportPayload)
     });
   }
 
@@ -553,9 +581,11 @@ export async function publishCanvaVersion(versionId) {
  * 5. Full Orchestrated Canva Sync Pipeline
  * Canva API ➔ Export (MP4 Video or PDF) ➔ Download ➔ Probe / PyMuPDF ➔ Auto-Publish ➔ Neon Postgres
  */
-export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false, format = null, autoPublish = null } = {}) {
+export async function syncCanvaDesign({ designId = 'DAHWvoM1AxQ', force = false, format = null, autoPublish = null, pages = null } = {}) {
   const conn = await getCanvaConnection();
-  const targetDesignId = designId || conn.design_id || 'DAHVb9pmJzQ';
+  const targetDesignId = designId || conn.design_id || 'DAHWvoM1AxQ';
+  const targetPagesStr = pages !== undefined && pages !== null ? pages : (conn.pages_to_sync || '1-5');
+  const targetPages = parsePagesRange(targetPagesStr);
   const token = await getEffectiveToken();
 
   if (!token) {
@@ -661,7 +691,7 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false,
         activeSyncState.message = 'Canva cloud is rendering 4K Video (may take 60-90s for multi-page presentations)...';
         sseBroadcaster.broadcast('CANVA_SYNC_PROGRESS', { ...activeSyncState });
 
-        const exportJob = await createCanvaExportJob(targetDesignId, 'mp4');
+        const exportJob = await createCanvaExportJob(targetDesignId, 'mp4', 'horizontal_4k', targetPages);
 
         console.log(`[Canva Sync] Waiting for Canva MP4 render job ${exportJob.id}...`);
         const downloadUrl = await waitForCanvaExportJob(exportJob.id, 180, (elapsedSec) => {
@@ -747,7 +777,7 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false,
         activeSyncState.message = 'Canva cloud is rendering PDF presentation slides...';
         sseBroadcaster.broadcast('CANVA_SYNC_PROGRESS', { ...activeSyncState });
 
-        const exportJob = await createCanvaExportJob(targetDesignId, 'pdf');
+        const exportJob = await createCanvaExportJob(targetDesignId, 'pdf', 'horizontal_4k', targetPages);
 
         console.log(`[Canva Sync] Waiting for export job ${exportJob.id}...`);
         const downloadUrl = await waitForCanvaExportJob(exportJob.id, 120, (elapsedSec) => {
@@ -780,8 +810,8 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false,
       presentationId = presResult.rows[0].id;
       const presentationSlidesDir = path.join(slidesBaseDir, presentationId);
 
-      console.log(`[Canva Sync] Rendering slides via PyMuPDF...`);
-      const renderResult = await renderPdfToSlides(pdfPath, presentationSlidesDir);
+      console.log(`[Canva Sync] Rendering slides via PyMuPDF (target pages: ${targetPagesStr})...`);
+      const renderResult = await renderPdfToSlides(pdfPath, presentationSlidesDir, targetPagesStr);
       pageCount = renderResult.page_count;
 
       await query('UPDATE presentations SET page_count = $1 WHERE id = $2', [pageCount, presentationId]);
@@ -901,7 +931,7 @@ export async function syncCanvaDesign({ designId = 'DAHVb9pmJzQ', force = false,
 /**
  * Returns all synced Canva versions
  */
-export async function getCanvaVersions(designId = 'DAHVb9pmJzQ') {
+export async function getCanvaVersions(designId = 'DAHWvoM1AxQ') {
   const res = await query(
     `SELECT v.*, p.title AS presentation_title, p.thumbnail_url, p.is_active, p.media_type, p.media_url, p.duration, p.width, p.height
      FROM canva_versions v

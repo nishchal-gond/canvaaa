@@ -29,7 +29,7 @@ async function checkCanvaForUpdates() {
       return;
     }
 
-    const designId = conn.design_id || 'DAHVb9pmJzQ';
+    const designId = conn.design_id || 'DAHWvoM1AxQ';
     const lastUpdatedAt = conn.last_canva_updated_at || 0;
 
     // 1. Lightweight metadata check (1 API call)
@@ -50,7 +50,8 @@ async function checkCanvaForUpdates() {
         const syncResult = await syncCanvaDesign({
           designId,
           format: conn.export_format || 'pdf',
-          autoPublish: conn.auto_publish !== false
+          autoPublish: conn.auto_publish !== false,
+          pages: conn.pages_to_sync || '1-5'
         });
         console.log(`[AutoSync] ✅ Automated sync successful: ${syncResult.message}`);
 

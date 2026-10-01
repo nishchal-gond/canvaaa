@@ -13,9 +13,13 @@ const RENDER_SCRIPT = path.resolve(__dirname, '../../scripts/render_pdf.py');
  * @param {string} outputDir - Directory where slide PNGs will be saved
  * @returns {Promise<{page_count: number, slides: Array<{slide_index: number, filename: string, width: number, height: number}>}>}
  */
-export function renderPdfToSlides(pdfPath, outputDir) {
+export function renderPdfToSlides(pdfPath, outputDir, pages = null) {
   return new Promise((resolve, reject) => {
-    const python = spawn('python', [RENDER_SCRIPT, pdfPath, outputDir]);
+    const args = [RENDER_SCRIPT, pdfPath, outputDir];
+    if (pages) {
+      args.push(Array.isArray(pages) ? pages.join(',') : String(pages));
+    }
+    const python = spawn('python', args);
 
     let stdoutData = '';
     let stderrData = '';

@@ -6,12 +6,47 @@ import pymupdf
 # Target resolution for the main display (full 1080p)
 DISPLAY_WIDTH = 1920
 
-# Thumbnail resolution for admin panel previews (480x270 WebP)
+# Thumbnail resolution for admin panel previews (480x270 WebP/JPG)
 # Much smaller: ~10x faster to load, ~5x less disk space
 THUMB_WIDTH = 480
 
 
-def render_pdf(pdf_path, output_dir):
+def parse_pages(pages_str, max_pages):
+    """
+    Parses a page range string like '1-5', '1,2,3', or '1-3,5'
+    into a sorted list of 1-based page numbers.
+    """
+    if not pages_str or str(pages_str).strip() == "":
+        return list(range(1, max_pages + 1))
+
+    pages = set()
+    parts = str(pages_str).split(",")
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            sub = part.split("-", 1)
+            try:
+                start = max(1, int(sub[0].strip()))
+                end = min(max_pages, int(sub[1].strip()))
+                for p in range(start, end + 1):
+                    pages.add(p)
+            except ValueError:
+                pass
+        else:
+            try:
+                p = int(part)
+                if 1 <= p <= max_pages:
+                    pages.add(p)
+            except ValueError:
+                pass
+
+    res = sorted(list(pages))
+    return res if res else list(range(1, max_pages + 1))
+
+
+def render_pdf(pdf_path, output_dir, pages_str=None):
     if not os.path.exists(pdf_path):
         return {"success": False, "error": f"PDF not found at {pdf_path}"}
 
@@ -21,11 +56,16 @@ def render_pdf(pdf_path, output_dir):
 
     try:
         doc = pymupdf.open(pdf_path)
-        page_count = len(doc)
+        total_pages = len(doc)
+        target_pages = parse_pages(pages_str, total_pages)
         slides = []
 
-        for i in range(page_count):
-            page = doc[i]
+        for new_idx, page_num in enumerate(target_pages, start=1):
+            page_index = page_num - 1  # 0-indexed for pymupdf
+            if page_index < 0 or page_index >= total_pages:
+                continue
+
+            page = doc[page_index]
             rect = page.rect
             width_pts = rect.width
             height_pts = rect.height
@@ -36,7 +76,7 @@ def render_pdf(pdf_path, output_dir):
             mat = pymupdf.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat, alpha=False)
 
-            filename = f"slide_{i + 1}.jpg"
+            filename = f"slide_{new_idx}.jpg"
             out_file = os.path.join(output_dir, filename)
             pix.save(out_file, output="jpg", jpg_quality=92)
 
@@ -45,12 +85,13 @@ def render_pdf(pdf_path, output_dir):
             thumb_mat = pymupdf.Matrix(thumb_scale, thumb_scale)
             thumb_pix = page.get_pixmap(matrix=thumb_mat, alpha=False)
 
-            thumb_filename = f"slide_{i + 1}.jpg"
+            thumb_filename = f"slide_{new_idx}.jpg"
             thumb_file = os.path.join(thumb_dir, thumb_filename)
             thumb_pix.save(thumb_file, output="jpg", jpg_quality=82)
 
             slides.append({
-                "slide_index": i + 1,
+                "slide_index": new_idx,
+                "original_page": page_num,
                 "filename": filename,
                 "thumb_filename": f"thumbs/{thumb_filename}",
                 "width": pix.width,
@@ -62,7 +103,7 @@ def render_pdf(pdf_path, output_dir):
         doc.close()
         return {
             "success": True,
-            "page_count": page_count,
+            "page_count": len(slides),
             "slides": slides
         }
     except Exception as e:
@@ -71,10 +112,11 @@ def render_pdf(pdf_path, output_dir):
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print(json.dumps({"success": False, "error": "Usage: python render_pdf.py <pdf_path> <output_dir>"}))
+        print(json.dumps({"success": False, "error": "Usage: python render_pdf.py <pdf_path> <output_dir> [pages_range]"}))
         sys.exit(1)
 
     pdf_path = sys.argv[1]
     output_dir = sys.argv[2]
-    result = render_pdf(pdf_path, output_dir)
+    pages_arg = sys.argv[3] if len(sys.argv) > 3 else None
+    result = render_pdf(pdf_path, output_dir, pages_arg)
     print(json.dumps(result))

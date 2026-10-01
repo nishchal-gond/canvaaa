@@ -29,6 +29,7 @@ export async function getCurrentDisplayPayload(forceRefresh = false) {
 
   const stateResult = await query(
     `SELECT d.id, d.is_paused, d.rotation_interval, d.active_presentation_id, d.last_published_at,
+            COALESCE(d.slide_4_duration, 25) AS slide_4_duration,
             COALESCE(d.schedule_enabled, true) AS schedule_enabled,
             COALESCE(d.schedule_start_time, '06:00') AS schedule_start_time,
             COALESCE(d.schedule_end_time, '19:00') AS schedule_end_time,
@@ -44,6 +45,7 @@ export async function getCurrentDisplayPayload(forceRefresh = false) {
   const state = stateResult.rows[0] || {
     is_paused: false,
     rotation_interval: 10,
+    slide_4_duration: 25,
     active_presentation_id: null,
     schedule_enabled: true,
     schedule_start_time: '06:00',
@@ -221,28 +223,51 @@ router.post('/continue', async (req, res) => {
  * Sets slide rotation interval (in seconds)
  */
 router.post('/interval', async (req, res) => {
-  const { rotation_interval } = req.body;
-  const interval = parseInt(rotation_interval, 10);
-  if (isNaN(interval) || interval < 1 || interval > 300) {
+  const { rotation_interval, slide_4_duration } = req.body;
+  const interval = rotation_interval ? parseInt(rotation_interval, 10) : null;
+  const s4Dur = slide_4_duration ? parseInt(slide_4_duration, 10) : null;
+
+  if (interval !== null && (isNaN(interval) || interval < 1 || interval > 300)) {
     return res.status(400).json({ error: 'rotation_interval must be between 1 and 300 seconds.' });
+  }
+  if (s4Dur !== null && (isNaN(s4Dur) || s4Dur < 1 || s4Dur > 300)) {
+    return res.status(400).json({ error: 'slide_4_duration must be between 1 and 300 seconds.' });
   }
 
   try {
-    await query(
-      `UPDATE display_state
-       SET rotation_interval = $1,
-           updated_at = NOW()
-       WHERE id = 1`,
-      [interval]
-    );
+    if (interval !== null && s4Dur !== null) {
+      await query(
+        `UPDATE display_state
+         SET rotation_interval = $1,
+             slide_4_duration = $2,
+             updated_at = NOW()
+         WHERE id = 1`,
+        [interval, s4Dur]
+      );
+    } else if (interval !== null) {
+      await query(
+        `UPDATE display_state
+         SET rotation_interval = $1,
+             updated_at = NOW()
+         WHERE id = 1`,
+        [interval]
+      );
+    } else if (s4Dur !== null) {
+      await query(
+        `UPDATE display_state
+         SET slide_4_duration = $1,
+             updated_at = NOW()
+         WHERE id = 1`,
+        [s4Dur]
+      );
+    }
 
     const payload = await getCurrentDisplayPayload(true);
     sseBroadcaster.broadcast('DISPLAY_STATE_CHANGED', payload);
 
     res.json({
       success: true,
-      message: `Rotation interval updated to ${interval} seconds.`,
-      rotation_interval: interval,
+      message: `Intervals updated successfully.`,
       payload
     });
   } catch (err) {

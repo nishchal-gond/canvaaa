@@ -59,6 +59,7 @@ export async function runMigrations() {
     ALTER TABLE display_state ADD COLUMN IF NOT EXISTS schedule_end_time VARCHAR(10) DEFAULT '19:00';
     ALTER TABLE display_state ADD COLUMN IF NOT EXISTS last_slide_index INT DEFAULT 0;
     ALTER TABLE display_state ADD COLUMN IF NOT EXISTS is_scheduled_sleep BOOLEAN DEFAULT false;
+    ALTER TABLE display_state ADD COLUMN IF NOT EXISTS slide_4_duration INT DEFAULT 25;
 
     -- Phase 2A: Canva Direct Sync Tables
     CREATE TABLE IF NOT EXISTS canva_connections (
@@ -83,8 +84,9 @@ export async function runMigrations() {
     ON CONFLICT (id) DO NOTHING;
 
     -- Phase 2B: Canva Video & Auto-Publish columns
-    ALTER TABLE canva_connections ADD COLUMN IF NOT EXISTS export_format VARCHAR(20) DEFAULT 'mp4';
+    ALTER TABLE canva_connections ADD COLUMN IF NOT EXISTS export_format VARCHAR(20) DEFAULT 'pdf';
     ALTER TABLE canva_connections ADD COLUMN IF NOT EXISTS auto_publish BOOLEAN DEFAULT true;
+    ALTER TABLE canva_connections ADD COLUMN IF NOT EXISTS pages_to_sync VARCHAR(100) DEFAULT '1-5';
 
     CREATE TABLE IF NOT EXISTS canva_versions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

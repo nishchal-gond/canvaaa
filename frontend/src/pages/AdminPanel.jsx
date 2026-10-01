@@ -69,8 +69,9 @@ export default function AdminPanel({ onLock }) {
   const [canvaConfigForm, setCanvaConfigForm] = useState({
     client_id: 'OC-AAdIyAng356N',
     client_secret: '',
-    design_id: 'DAHVb9pmJzQ',
-    design_title: 'Copy of Dashboard Screen 16/9',
+    design_id: 'DAHWvoM1AxQ',
+    design_title: 'dashboard Screen 01/10',
+    pages_to_sync: '1-5',
     access_token: '',
     export_format: 'pdf',
     auto_publish: true,
@@ -200,8 +201,9 @@ export default function AdminPanel({ onLock }) {
             ...prev,
             client_id: data.connection.client_id || prev.client_id || 'OC-AAdIyAng356N',
             client_secret: data.connection.client_secret_masked || prev.client_secret || '',
-            design_id: data.connection.design_id || 'DAHVb9pmJzQ',
-            design_title: data.connection.design_title || 'Copy of Dashboard Screen 16/9',
+            design_id: data.connection.design_id || 'DAHWvoM1AxQ',
+            design_title: data.connection.design_title || 'dashboard Screen 01/10',
+            pages_to_sync: data.connection.pages_to_sync || prev.pages_to_sync || '1-5',
             export_format: data.connection.export_format || 'pdf',
             auto_publish: data.connection.auto_publish !== false
           }));
@@ -261,7 +263,8 @@ export default function AdminPanel({ onLock }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          design_id: canvaStatus?.connection?.design_id || 'DAHVb9pmJzQ',
+          design_id: canvaStatus?.connection?.design_id || canvaConfigForm.design_id || 'DAHWvoM1AxQ',
+          pages: canvaConfigForm.pages_to_sync || canvaStatus?.connection?.pages_to_sync || '1-5',
           force,
           format: chosenFormat,
           auto_publish: canvaConfigForm.auto_publish !== false,
@@ -757,6 +760,21 @@ export default function AdminPanel({ onLock }) {
     }
   };
 
+  const handleSetSlide4Duration = async (seconds) => {
+    try {
+      const res = await fetch(apiUrl('/api/display/interval'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slide_4_duration: seconds })
+      });
+      if (res.ok) {
+        await loadDisplayState();
+      }
+    } catch (err) {
+      console.error('Failed to update Slide 4 duration:', err);
+    }
+  };
+
   // On-the-fly manual slide navigation (Next, Prev, or specific slide index)
   const handleNavigateSlide = async (action, slideIndex = null) => {
     try {
@@ -846,8 +864,8 @@ export default function AdminPanel({ onLock }) {
     displayState?.state?.active_presentation_id === latestCanvaVersion.presentation_id
   );
   const canvaDesignTitle =
-    canvaStatus?.connection?.design_title || 'Copy of Dashboard Screen 16/9';
-  const canvaDesignId = canvaStatus?.connection?.design_id || 'DAHVb9pmJzQ';
+    canvaStatus?.connection?.design_title || 'dashboard Screen 01/10';
+  const canvaDesignId = canvaStatus?.connection?.design_id || 'DAHWvoM1AxQ';
   const isCanvaConnected = canvaStatus?.connection?.status === 'connected';
 
   return (
@@ -1133,6 +1151,39 @@ export default function AdminPanel({ onLock }) {
                   {sec}s
                 </button>
               ))}
+            </div>
+
+            {/* Slide 4 Extended Timing Selector */}
+            <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Slide 4 (Deals) Extended Timing:
+                </span>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent-gold)' }}>
+                  {displayState?.state?.slide_4_duration || 25} seconds (Stay longer)
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {[15, 20, 25, 30, 45, 60].map((sec) => (
+                  <button
+                    key={sec}
+                    onClick={() => handleSetSlide4Duration(sec)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: (displayState?.state?.slide_4_duration || 25) === sec ? '700' : '400',
+                      background: (displayState?.state?.slide_4_duration || 25) === sec ? 'var(--accent-gold)' : '#1e1d1b',
+                      color: (displayState?.state?.slide_4_duration || 25) === sec ? '#000' : '#d1cfca',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {sec}s
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -1443,7 +1494,18 @@ export default function AdminPanel({ onLock }) {
                   onChange={(e) =>
                     setCanvaConfigForm({ ...canvaConfigForm, design_title: e.target.value })
                   }
-                  placeholder="e.g. Copy of Dashboard Screen 16/9"
+                  placeholder="e.g. dashboard Screen 01/10"
+                />
+              </div>
+              <div className="config-field">
+                <label>Pages to Sync (e.g. 1-5 for unhidden slides)</label>
+                <input
+                  type="text"
+                  value={canvaConfigForm.pages_to_sync || '1-5'}
+                  onChange={(e) =>
+                    setCanvaConfigForm({ ...canvaConfigForm, pages_to_sync: e.target.value })
+                  }
+                  placeholder="e.g. 1-5"
                 />
               </div>
               <div className="config-field">
@@ -1599,6 +1661,13 @@ export default function AdminPanel({ onLock }) {
                 (canvaStatus?.connection?.last_canva_updated_at
                   ? `v${canvaStatus.connection.last_canva_updated_at}`
                   : '—')}
+            </div>
+          </div>
+
+          <div className="canva-stat-card">
+            <div className="canva-stat-label">PAGES SYNCED</div>
+            <div className="canva-stat-val mono-val" style={{ fontSize: '13px', color: 'var(--accent-gold)' }}>
+              Pages {canvaStatus?.connection?.pages_to_sync || '1-5'}
             </div>
           </div>
 

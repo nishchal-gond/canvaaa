@@ -125,7 +125,7 @@ router.get('/status', async (req, res) => {
  * Saves credentials/token and tests connectivity
  */
 router.post('/connect', async (req, res) => {
-  const { design_id, access_token, design_title, client_id, client_secret } = req.body;
+  const { design_id, access_token, design_title, client_id, client_secret, pages_to_sync } = req.body;
 
   try {
     const fieldsToUpdate = {};
@@ -133,7 +133,8 @@ router.post('/connect', async (req, res) => {
     if (client_secret !== undefined && client_secret !== '••••••••••••••••') fieldsToUpdate.client_secret = client_secret.trim();
     if (design_id) fieldsToUpdate.design_id = design_id.trim();
     if (design_title) fieldsToUpdate.design_title = design_title.trim();
-    if (access_token !== undefined && access_token !== '••••••••••••••••') fieldsToUpdate.access_token = access_token.trim();
+    if (access_token !== undefined && access_token !== '••••••••••••••••' && access_token.trim()) fieldsToUpdate.access_token = access_token.trim();
+    if (pages_to_sync !== undefined) fieldsToUpdate.pages_to_sync = pages_to_sync.trim();
 
     await updateCanvaConnection(fieldsToUpdate);
 
@@ -141,14 +142,14 @@ router.post('/connect', async (req, res) => {
     let testSuccess = false;
     let message = 'Connection settings saved.';
 
-    const targetDesignId = design_id || 'DAHVb9pmJzQ';
+    const targetDesignId = design_id || 'DAHWvoM1AxQ';
     if (access_token) {
       const meta = await getCanvaDesignMetadata(targetDesignId);
       if (meta.success) {
         testSuccess = true;
         await updateCanvaConnection({
           status: 'connected',
-          design_title: meta.design.title || fieldsToUpdate.design_title || 'Copy of Dashboard Screen 16/9'
+          design_title: meta.design.title || fieldsToUpdate.design_title || 'dashboard Screen 01/10'
         });
         message = `Successfully connected to Canva design: "${meta.design.title}"`;
       } else {
@@ -178,7 +179,7 @@ router.post('/connect', async (req, res) => {
  * Non-blocking by default (returns HTTP 202) to prevent cloud reverse proxy timeouts
  */
 router.post('/sync', async (req, res) => {
-  const { design_id, force, format, auto_publish, async: isAsync = true } = req.body;
+  const { design_id, force, format, auto_publish, pages, async: isAsync = true } = req.body;
 
   try {
     const currentSync = getActiveSyncState();
@@ -198,7 +199,8 @@ router.post('/sync', async (req, res) => {
         designId: design_id,
         force: Boolean(force),
         format: format || undefined,
-        autoPublish: typeof auto_publish === 'boolean' ? auto_publish : undefined
+        autoPublish: typeof auto_publish === 'boolean' ? auto_publish : undefined,
+        pages: pages || undefined
       }).catch((bgErr) => {
         console.error('[Async Canva Sync Background Error]:', bgErr);
       });
@@ -216,7 +218,8 @@ router.post('/sync', async (req, res) => {
       designId: design_id,
       force: Boolean(force),
       format: format || undefined,
-      autoPublish: typeof auto_publish === 'boolean' ? auto_publish : undefined
+      autoPublish: typeof auto_publish === 'boolean' ? auto_publish : undefined,
+      pages: pages || undefined
     });
 
     res.json(result);
