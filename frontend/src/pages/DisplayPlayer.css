@@ -45,6 +45,13 @@
 .slide-layer.active {
   opacity: 1;
   pointer-events: auto;
+  z-index: 2;
+}
+
+/* Previous slide held underneath until the active slide's image has loaded */
+.slide-layer.behind {
+  opacity: 1;
+  z-index: 1;
 }
 
 /* Native Video Layer for MP4 playback */

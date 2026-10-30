@@ -13,14 +13,14 @@ import {
 } from 'lucide-react';
 import './DisplayPlayer.css';
 import { apiUrl, assetUrl, CLOUD_BACKEND_URL } from '../config/api';
-import { saveSlideBlob, getSlideBlob, saveSignageMeta, getSignageMeta } from '../utils/offlineCache';
+import { saveSlideBlob, getSlideBlob, pruneSlideBlobs, saveSignageMeta, getSignageMeta } from '../utils/offlineCache';
 
 // Vercel's /uploads rewrite to Easypanel intermittently fails: some requests hang ~30s and then
 // return 502 ROUTER_EXTERNAL_TARGET_CONNECTION_ERROR, which left slides blank on the screen.
 // Never wait on a single path — time-box it and fall back to the backend directly.
-const VERCEL_FETCH_TIMEOUT_MS = 8000;
+const VERCEL_FETCH_TIMEOUT_MS = 4000;
 const DIRECT_FETCH_TIMEOUT_MS = 25000;
-const IMG_WATCHDOG_MS = 6000;
+const IMG_WATCHDOG_MS = 3000;
 
 function directAssetUrl(path) {
   if (!path) return '';
@@ -131,6 +131,11 @@ export default function DisplayPlayer() {
 
   const currentSlideIndexRef = useRef(currentSlideIndex);
   currentSlideIndexRef.current = currentSlideIndex;
+
+  // Last slide whose image actually painted. It stays visible underneath the active slide until
+  // the active image has loaded, so a slow image never shows as a black sheet.
+  const [shownSlideIndex, setShownSlideIndex] = useState(currentSlideIndex);
+  const slideImgRefs = useRef({});
 
   const lastPublishedAtRef = useRef(displayState?.last_published_at || null);
   const activePresIdRef = useRef(displayState?.active_presentation_id || null);
@@ -274,18 +279,10 @@ export default function DisplayPlayer() {
       })
     );
 
-    // 2. Prioritize background caching: active slide first, next slide, then rest
-    const queue = [];
+    // 2. Prioritize background caching in play order: active slide, then the ones coming up next
     const n = slideList.length;
-    if (n > 0) {
-      const p1 = activeIdx % n;
-      const p2 = (activeIdx + 1) % n;
-      queue.push(p1);
-      if (p2 !== p1) queue.push(p2);
-      for (let i = 0; i < n; i++) {
-        if (i !== p1 && i !== p2) queue.push(i);
-      }
-    }
+    const start = n > 0 ? activeIdx % n : 0;
+    const queue = Array.from({ length: n }, (_, i) => (start + i) % n);
 
     // Background progressive cache worker (gentle sequential downloads).
     // Each fetch is time-boxed with a direct-backend fallback, and slides that still fail are
@@ -299,20 +296,35 @@ export default function DisplayPlayer() {
           const slide = slideList[idx];
           if (!slide || !slide.image_path) continue;
           const key = `slide_${slide.id}`;
-          if (await getSlideBlob(key)) continue;
           try {
-            const blob = await fetchSlideBlob(slide.image_path);
-            await saveSlideBlob(key, blob);
-            const blobUrl = URL.createObjectURL(blob);
-            setSlides((prev) =>
-              prev.map((s, i) => (i === idx && s.id === slide.id ? { ...s, blobUrl } : s))
-            );
+            // Another hydration run may already have cached it — still attach it to the
+            // current slide list, otherwise this slide keeps loading over the network.
+            let blob = await getSlideBlob(key);
+            if (!blob) {
+              blob = await fetchSlideBlob(slide.image_path);
+              await saveSlideBlob(key, blob);
+              await new Promise((r) => setTimeout(r, 150));
+            }
+            const current = slidesRef.current[idx];
+            if (current && current.id === slide.id && !current.blobUrl) {
+              const blobUrl = URL.createObjectURL(blob);
+              setSlides((prev) =>
+                prev.map((s, i) => (i === idx && s.id === slide.id && !s.blobUrl ? { ...s, blobUrl } : s))
+              );
+            }
           } catch {
             failed.push(idx);
           }
-          await new Promise((r) => setTimeout(r, 150));
         }
         pending = failed;
+      }
+
+      // Drop blobs of older decks so the screen's storage doesn't grow with every Canva sync.
+      const liveIds = slidesRef.current.map((s) => s.id);
+      const isStillCurrent =
+        liveIds.length === slideList.length && slideList.every((s, i) => s.id === liveIds[i]);
+      if (isStillCurrent && pending.length === 0) {
+        pruneSlideBlobs(slideList.map((s) => `slide_${s.id}`));
       }
     })();
 
@@ -445,6 +457,13 @@ export default function DisplayPlayer() {
         setIsPaused(false);
       });
   }, []);
+
+  // If the new active slide was already preloaded (or comes from the offline cache), it is
+  // painted straight away and no load event will fire again — mark it as shown here.
+  useEffect(() => {
+    const el = slideImgRefs.current[currentSlideIndex];
+    if (el && el.complete && el.naturalWidth > 0) setShownSlideIndex(currentSlideIndex);
+  }, [currentSlideIndex, slides]);
 
   // Watchdog: if a mounted slide image still hasn't loaded after a few seconds, the Vercel rewrite
   // is probably hanging — point that <img> straight at the backend instead of waiting 30s for a 502.
@@ -913,14 +932,23 @@ export default function DisplayPlayer() {
               // (LG webOS browser then paints just the top tiles, rest black).
               const n = slides.length;
               const d = (idx - currentSlideIndex + n) % n;
-              if (d > 1 && d !== n - 1) return null;
+              const isActive = idx === currentSlideIndex;
+              const isBehind = !isActive && idx === shownSlideIndex;
+              if (d > 1 && d !== n - 1 && !isBehind) return null;
               return (
               <img
                 key={slide.id || idx}
+                ref={(el) => {
+                  if (el) slideImgRefs.current[idx] = el;
+                  else delete slideImgRefs.current[idx];
+                }}
                 src={slide.blobUrl || assetUrl(slide.image_path)}
                 data-path={slide.image_path}
                 alt=""
-                className={`slide-layer ${idx === currentSlideIndex ? 'active' : ''}`}
+                className={`slide-layer ${isActive ? 'active' : ''} ${isBehind ? 'behind' : ''}`}
+                onLoad={() => {
+                  if (idx === currentSlideIndexRef.current) setShownSlideIndex(idx);
+                }}
                 loading={
                   Math.abs(idx - currentSlideIndex) <= 1 ||
                   (currentSlideIndex === slides.length - 1 && idx === 0) ||

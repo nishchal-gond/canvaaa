@@ -60,19 +60,33 @@ const upload = multer({
 
 /**
  * Purges all older presentations, slide folders, thumbnails, and media files.
- * Keeps only the specified presentationId (or cleans all if null).
+ * Keeps the specified presentationId (or cleans all if null) plus the deck that is on screen
+ * right now: displays keep showing that one until they pick up the new publish, and deleting its
+ * files immediately turns any slide they haven't cached yet into a black sheet. It goes on the
+ * next publish.
  */
 export async function purgeOldPresentations(keepPresentationId = null) {
   try {
-    let sql = 'SELECT id, filename, media_type FROM presentations';
-    const params = [];
+    const keepIds = new Set();
     if (keepPresentationId) {
-      sql += ' WHERE id != $1';
-      params.push(keepPresentationId);
+      keepIds.add(keepPresentationId);
+      try {
+        const active = await query('SELECT active_presentation_id FROM display_state WHERE id = 1');
+        const activeId = active.rows[0]?.active_presentation_id;
+        if (activeId) keepIds.add(activeId);
+      } catch {}
+      try {
+        await query('UPDATE presentations SET is_active = false WHERE id != $1', [keepPresentationId]);
+      } catch {}
     }
-    const res = await query(sql, params);
 
-    for (const row of res.rows) {
+    const allRes = await query('SELECT id, filename, media_type FROM presentations');
+    const keepFilenames = new Set(
+      allRes.rows.filter((r) => keepIds.has(r.id) && r.filename).map((r) => r.filename)
+    );
+    const purgeRows = allRes.rows.filter((r) => !keepIds.has(r.id));
+
+    for (const row of purgeRows) {
       // 1. Remove slide image directory
       const slideDir = path.join(slidesBaseDir, row.id);
       if (fs.existsSync(slideDir)) {
@@ -86,7 +100,7 @@ export async function purgeOldPresentations(keepPresentationId = null) {
       }
 
       // 3. Remove source document or video file
-      if (row.filename) {
+      if (row.filename && !keepFilenames.has(row.filename)) {
         const docPath = path.join(docsDir, row.filename);
         if (fs.existsSync(docPath)) try { fs.unlinkSync(docPath); } catch {}
         const videoPath = path.join(videosDir, row.filename);
@@ -100,57 +114,29 @@ export async function purgeOldPresentations(keepPresentationId = null) {
     }
 
     // 5. Sweep disk for any orphan slide and thumbnail directories
-    if (fs.existsSync(slidesBaseDir)) {
+    for (const baseDir of [slidesBaseDir, thumbsBaseDir]) {
+      if (!fs.existsSync(baseDir)) continue;
       try {
-        const slideFolders = fs.readdirSync(slidesBaseDir);
-        for (const folder of slideFolders) {
-          if (keepPresentationId && folder === keepPresentationId) continue;
-          const target = path.join(slidesBaseDir, folder);
-          try { fs.rmSync(target, { recursive: true, force: true }); } catch {}
+        for (const folder of fs.readdirSync(baseDir)) {
+          if (keepIds.has(folder)) continue;
+          try { fs.rmSync(path.join(baseDir, folder), { recursive: true, force: true }); } catch {}
         }
       } catch {}
     }
 
-    if (fs.existsSync(thumbsBaseDir)) {
+    // 6. Sweep disk for any orphan docs or video files not belonging to a kept presentation
+    for (const baseDir of [docsDir, videosDir]) {
+      if (!fs.existsSync(baseDir)) continue;
       try {
-        const thumbFolders = fs.readdirSync(thumbsBaseDir);
-        for (const folder of thumbFolders) {
-          if (keepPresentationId && folder === keepPresentationId) continue;
-          const target = path.join(thumbsBaseDir, folder);
-          try { fs.rmSync(target, { recursive: true, force: true }); } catch {}
+        for (const file of fs.readdirSync(baseDir)) {
+          if (keepFilenames.has(file)) continue;
+          try { fs.unlinkSync(path.join(baseDir, file)); } catch {}
         }
       } catch {}
     }
 
-    // 6. Sweep disk for any orphan docs or video files not belonging to the kept presentation
-    let keepFilename = null;
-    if (keepPresentationId) {
-      const keepRes = await query('SELECT filename FROM presentations WHERE id = $1', [keepPresentationId]);
-      keepFilename = keepRes.rows[0]?.filename || null;
-    }
-
-    if (fs.existsSync(docsDir)) {
-      try {
-        const docFiles = fs.readdirSync(docsDir);
-        for (const file of docFiles) {
-          if (keepFilename && file === keepFilename) continue;
-          try { fs.unlinkSync(path.join(docsDir, file)); } catch {}
-        }
-      } catch {}
-    }
-
-    if (fs.existsSync(videosDir)) {
-      try {
-        const videoFiles = fs.readdirSync(videosDir);
-        for (const file of videoFiles) {
-          if (keepFilename && file === keepFilename) continue;
-          try { fs.unlinkSync(path.join(videosDir, file)); } catch {}
-        }
-      } catch {}
-    }
-
-    if (res.rows.length > 0) {
-      console.log(`🧹 Auto-purged ${res.rows.length} old presentation(s) and their disk files.`);
+    if (purgeRows.length > 0) {
+      console.log(`🧹 Auto-purged ${purgeRows.length} old presentation(s) and their disk files.`);
     }
   } catch (err) {
     console.error('Error during old presentations cleanup:', err);

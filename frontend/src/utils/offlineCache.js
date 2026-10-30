@@ -54,6 +54,33 @@ export async function getSlideBlob(key) {
   }
 }
 
+// Delete cached slide blobs that are not in keepKeys (slides from older Canva syncs)
+export async function pruneSlideBlobs(keepKeys) {
+  try {
+    const db = await openDB();
+    if (!db) return 0;
+    const keep = new Set(keepKeys);
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    let removed = 0;
+    const req = store.getAllKeys();
+    req.onsuccess = () => {
+      for (const key of req.result || []) {
+        if (!keep.has(key)) {
+          store.delete(key);
+          removed += 1;
+        }
+      }
+    };
+    return new Promise((resolve) => {
+      tx.oncomplete = () => resolve(removed);
+      tx.onerror = () => resolve(0);
+    });
+  } catch {
+    return 0;
+  }
+}
+
 export async function saveSignageMeta(key, data) {
   try {
     const db = await openDB();
