@@ -65,6 +65,9 @@ export default function AdminPanel({ onLock }) {
   const [canvaFeedback, setCanvaFeedback] = useState(null);
   const [scheduleFeedback, setScheduleFeedback] = useState(null);
   const [showCanvaConfig, setShowCanvaConfig] = useState(false);
+  // Ref so the 3s polling closure sees the live value and doesn't overwrite fields being edited
+  const showCanvaConfigRef = useRef(false);
+  showCanvaConfigRef.current = showCanvaConfig;
   const [showVersionsDrawer, setShowVersionsDrawer] = useState(false);
   const [canvaConfigForm, setCanvaConfigForm] = useState({
     client_id: 'OC-AAdIyAng356N',
@@ -196,7 +199,7 @@ export default function AdminPanel({ onLock }) {
       if (statusRes.ok) {
         const data = await statusRes.json();
         setCanvaStatus(data);
-        if (data.connection) {
+        if (data.connection && !showCanvaConfigRef.current) {
           setCanvaConfigForm((prev) => ({
             ...prev,
             client_id: data.connection.client_id || prev.client_id || 'OC-AAdIyAng356N',
