@@ -15,6 +15,44 @@ import './DisplayPlayer.css';
 import { apiUrl, assetUrl, CLOUD_BACKEND_URL } from '../config/api';
 import { saveSlideBlob, getSlideBlob, saveSignageMeta, getSignageMeta } from '../utils/offlineCache';
 
+// Vercel's /uploads rewrite to Easypanel intermittently fails: some requests hang ~30s and then
+// return 502 ROUTER_EXTERNAL_TARGET_CONNECTION_ERROR, which left slides blank on the screen.
+// Never wait on a single path — time-box it and fall back to the backend directly.
+const VERCEL_FETCH_TIMEOUT_MS = 8000;
+const DIRECT_FETCH_TIMEOUT_MS = 25000;
+const IMG_WATCHDOG_MS = 6000;
+
+function directAssetUrl(path) {
+  if (!path) return '';
+  if (/^(https?:|data:|blob:)/.test(path)) return path;
+  return `${CLOUD_BACKEND_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+async function fetchBlobWithTimeout(url, ms) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    if (!blob.type.startsWith('image/')) throw new Error(`Unexpected content type ${blob.type}`);
+    return blob;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchSlideBlob(path) {
+  const viaVercel = assetUrl(path);
+  const direct = directAssetUrl(path);
+  try {
+    return await fetchBlobWithTimeout(viaVercel, VERCEL_FETCH_TIMEOUT_MS);
+  } catch (err) {
+    if (direct === viaVercel) throw err;
+    return await fetchBlobWithTimeout(direct, DIRECT_FETCH_TIMEOUT_MS);
+  }
+}
+
 /**
  * Checks if current local time is outside office operating hours
  * Default: Operating 06:00 to 19:00 (7 PM). Sleep starts at 19:00 and wakes at 06:00.
@@ -249,26 +287,32 @@ export default function DisplayPlayer() {
       }
     }
 
-    // Background progressive cache worker (gentle sequential downloads)
+    // Background progressive cache worker (gentle sequential downloads).
+    // Each fetch is time-boxed with a direct-backend fallback, and slides that still fail are
+    // retried in later passes so the whole deck ends up in IndexedDB instead of staying blank.
     (async () => {
-      for (const idx of queue) {
-        const slide = slideList[idx];
-        if (!slide) continue;
-        const key = `slide_${slide.id}`;
-        const existing = await getSlideBlob(key);
-        if (!existing && slide.image_path) {
+      let pending = queue;
+      for (let pass = 0; pass < 4 && pending.length > 0; pass++) {
+        if (pass > 0) await new Promise((r) => setTimeout(r, 5000 * pass));
+        const failed = [];
+        for (const idx of pending) {
+          const slide = slideList[idx];
+          if (!slide || !slide.image_path) continue;
+          const key = `slide_${slide.id}`;
+          if (await getSlideBlob(key)) continue;
           try {
-            const res = await fetch(assetUrl(slide.image_path));
-            if (res.ok) {
-              const blob = await res.blob();
-              await saveSlideBlob(key, blob);
-              setSlides((prev) =>
-                prev.map((s, i) => (i === idx ? { ...s, blobUrl: URL.createObjectURL(blob) } : s))
-              );
-            }
-          } catch {}
+            const blob = await fetchSlideBlob(slide.image_path);
+            await saveSlideBlob(key, blob);
+            const blobUrl = URL.createObjectURL(blob);
+            setSlides((prev) =>
+              prev.map((s, i) => (i === idx && s.id === slide.id ? { ...s, blobUrl } : s))
+            );
+          } catch {
+            failed.push(idx);
+          }
           await new Promise((r) => setTimeout(r, 150));
         }
+        pending = failed;
       }
     })();
 
@@ -401,6 +445,21 @@ export default function DisplayPlayer() {
         setIsPaused(false);
       });
   }, []);
+
+  // Watchdog: if a mounted slide image still hasn't loaded after a few seconds, the Vercel rewrite
+  // is probably hanging — point that <img> straight at the backend instead of waiting 30s for a 502.
+  useEffect(() => {
+    if (slides.length === 0) return undefined;
+    const timer = setTimeout(() => {
+      document.querySelectorAll('img.slide-layer[data-path]').forEach((img) => {
+        if (img.complete && img.naturalWidth > 0) return;
+        if (img.dataset.cloudFallback || img.src.startsWith('blob:')) return;
+        img.dataset.cloudFallback = '1';
+        img.src = directAssetUrl(img.dataset.path);
+      });
+    }, IMG_WATCHDOG_MS);
+    return () => clearTimeout(timer);
+  }, [currentSlideIndex, slides.length, displayState?.last_published_at]);
 
   // Keep the handleDisplayPayload ref always fresh so SSE event handlers never use stale closures
   useEffect(() => {
@@ -859,6 +918,7 @@ export default function DisplayPlayer() {
               <img
                 key={slide.id || idx}
                 src={slide.blobUrl || assetUrl(slide.image_path)}
+                data-path={slide.image_path}
                 alt=""
                 className={`slide-layer ${idx === currentSlideIndex ? 'active' : ''}`}
                 loading={

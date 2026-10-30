@@ -45,6 +45,9 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve static uploaded slides and assets
 const uploadsDir = path.resolve(__dirname, '../uploads');
+// Slide images sit under a per-presentation UUID and don't change once written, so let browsers
+// keep them for a day instead of re-validating through the Vercel proxy on every slide change.
+app.use('/uploads/slides', express.static(path.join(uploadsDir, 'slides'), { maxAge: '1d' }));
 app.use('/uploads', express.static(uploadsDir));
 
 // API Routes
